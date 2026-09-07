@@ -1,0 +1,21 @@
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9        # required for UploadFile
+pydantic>=2.7.0
+groq>=0.9.0                    # Groq SDK for Llama 3 LLM recommendations (Stage 7)
+
+# ML / audio
+# torch 2.4+ is required for NumPy 2.x compatibility
+torch>=2.4.0
+scikit-learn>=1.4.0
+joblib>=1.4.0
+# librosa 1.0 requires numpy>=2.1; use 0.10.x for numpy<2 environments
+librosa>=1.0.0
+soundfile>=0.12.1              # used by librosa for some formats
+numpy>=2.1.0                   # librosa 1.0 + pennylane 0.45 both need >=2.0
+
+# Quantum (optional — hybrid model falls back to classical if absent)
+pennylane>=0.45.0              # requires numpy>=2.0
+
+# Praat features (optional — falls back to zeros if absent)
+praat-parselmouth>=0.4.3

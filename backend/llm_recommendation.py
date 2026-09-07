@@ -1,0 +1,218 @@
+"""
+llm_recommendation.py — LLM-powered clinical recommendation (Stage 7).
+
+Uses Groq's Llama 3 model to generate a personalised, clinically-framed
+recommendation based on the screening result and the top voice features
+that drove the prediction.
+
+Setup
+-----
+Set GROQ_API_KEY in your environment (free at https://console.groq.com):
+    export GROQ_API_KEY="gsk_..."
+
+Falls back to a rule-based recommendation if the key is not set.
+"""
+
+import logging
+import os
+from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Feature-name human labels (for readable LLM prompts)
+# ---------------------------------------------------------------------------
+
+FEATURE_LABELS = {
+    "mfcc_mean_0":  "MFCC-1 mean (vocal tract shape / spectral envelope)",
+    "mfcc_mean_1":  "MFCC-2 mean (spectral tilt)",
+    "mfcc_mean_2":  "MFCC-3 mean (spectral detail)",
+    "mfcc_std_0":   "MFCC-1 std deviation (voice stability across time)",
+    "mfcc_std_1":   "MFCC-2 std deviation (spectral variability)",
+    "mfcc_std_3":   "MFCC-4 std deviation (formant variation)",
+    "mfcc_std_4":   "MFCC-5 std deviation (fine spectral variation)",
+    "mfcc_std_6":   "MFCC-7 std deviation (high-freq spectral variation)",
+    "mfcc_std_10":  "MFCC-11 std deviation (detailed spectral energy variation)",
+    "mfcc_std_11":  "MFCC-12 std deviation (subtle spectral variation)",
+    "f0_mean":      "Mean fundamental frequency / pitch (F0)",
+    "f0_std":       "Pitch variability (F0 std deviation)",
+    "jitter_local": "Jitter – cycle-to-cycle pitch period irregularity",
+    "jitter_rap":   "RAP Jitter – smoothed pitch irregularity",
+    "jitter_ppq5":  "PPQ5 Jitter – 5-point smoothed pitch irregularity",
+    "shimmer_local":"Shimmer – cycle-to-cycle amplitude irregularity",
+    "shimmer_apq3": "APQ3 Shimmer – 3-point amplitude perturbation",
+    "shimmer_apq5": "APQ5 Shimmer – 5-point amplitude perturbation",
+    "hnr":          "Harmonics-to-Noise Ratio (voice clarity vs breathiness)",
+    "zcr":          "Zero-crossing rate (voice noisiness / breathiness)",
+    "spec_centroid":"Spectral centroid (brightness of the voice)",
+    "spec_rolloff": "Spectral rolloff (energy distribution across frequencies)",
+}
+
+RISK_CONTEXT = {
+    "low": (
+        "The screening result is LOW RISK. "
+        "The voice biomarkers are within normal range. "
+        "No immediate clinical concern for Parkinson's Disease is indicated."
+    ),
+    "moderate": (
+        "The screening result is MODERATE RISK. "
+        "Some voice biomarkers show mild deviations that may warrant clinical attention. "
+        "This is not a diagnosis — it is a screening signal."
+    ),
+    "high": (
+        "The screening result is HIGH RISK. "
+        "Multiple voice biomarkers show significant deviations consistent with "
+        "dysphonia patterns associated with Parkinson's Disease. "
+        "This is NOT a diagnosis — it is a screening signal requiring professional evaluation."
+    ),
+}
+
+
+# ---------------------------------------------------------------------------
+# Prompt builder
+# ---------------------------------------------------------------------------
+
+def _build_prompt(
+    probability: float,
+    risk_level: str,
+    selected_features: dict[str, float],
+    model_used: str,
+) -> str:
+    """Build a clinically-framed prompt for the LLM."""
+
+    # Top 3 features by absolute value (most influential for this prediction)
+    sorted_feats = sorted(selected_features.items(), key=lambda x: abs(x[1]), reverse=True)[:3]
+    feat_lines = "\n".join(
+        f"  • {FEATURE_LABELS.get(k, k)}: {v:.4f}"
+        for k, v in sorted_feats
+    )
+
+    risk_ctx = RISK_CONTEXT.get(risk_level, RISK_CONTEXT["moderate"])
+
+    prompt = f"""You are a clinical voice analysis assistant for a Parkinson's Disease early-screening application (SIH26139). 
+You help patients and caregivers understand a non-invasive voice screening result.
+
+SCREENING RESULT:
+- Risk Level: {risk_level.upper()}
+- PD Risk Probability: {probability * 100:.1f}%
+- Model: Hybrid Quantum-Classical ML ({model_used})
+- Context: {risk_ctx}
+
+KEY VOICE BIOMARKERS (top contributors to this result):
+{feat_lines}
+
+IMPORTANT DISCLAIMERS TO INCLUDE:
+- This is a screening tool, NOT a diagnostic device.
+- Only a qualified neurologist can diagnose Parkinson's Disease.
+- Voice biomarkers can be affected by other conditions (vocal infections, aging, stress).
+
+YOUR TASK:
+Write a clear, compassionate, and medically responsible recommendation in 3–4 short paragraphs:
+1. Summarise what the screening found in plain language (no jargon).
+2. Explain what the key voice features mean in simple terms.
+3. Give a concrete next-step recommendation based on the risk level.
+4. End with a reassuring note emphasising the importance of professional evaluation.
+
+Keep the tone warm and human — the reader may be a worried patient or caregiver.
+Do NOT use bullet points. Write in flowing paragraphs. Maximum 200 words.
+"""
+    return prompt
+
+
+# ---------------------------------------------------------------------------
+# Groq LLM call
+# ---------------------------------------------------------------------------
+
+def generate_llm_recommendation(
+    probability: float,
+    risk_level: str,
+    selected_features: dict[str, float],
+    model_used: str,
+    groq_api_key: Optional[str] = None,
+) -> str:
+    """
+    Generate an LLM-powered recommendation using Groq Llama 3.
+
+    Returns the recommendation string.
+    Falls back to a rule-based recommendation if Groq is unavailable.
+    """
+    api_key = groq_api_key or os.environ.get("GROQ_API_KEY", "")
+
+    if not api_key:
+        logger.warning("GROQ_API_KEY not set — using rule-based recommendation fallback.")
+        return _fallback_recommendation(probability, risk_level)
+
+    try:
+        from groq import Groq
+
+        client = Groq(api_key=api_key)
+
+        prompt = _build_prompt(probability, risk_level, selected_features, model_used)
+
+        response = client.chat.completions.create(
+            model="llama-3.1-70b-versatile",   # fast, smart, free tier
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a concise, compassionate clinical assistant "
+                        "helping patients understand a non-diagnostic voice screening result. "
+                        "Always remind users to consult a neurologist."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.4,       # keep it factual, not creative
+            max_tokens=350,
+            top_p=0.9,
+        )
+
+        recommendation = response.choices[0].message.content.strip()
+        logger.info("LLM recommendation generated (%d chars).", len(recommendation))
+        return recommendation
+
+    except Exception as exc:
+        logger.warning("Groq LLM call failed: %s — using fallback.", exc)
+        return _fallback_recommendation(probability, risk_level)
+
+
+# ---------------------------------------------------------------------------
+# Rule-based fallback (no API key needed)
+# ---------------------------------------------------------------------------
+
+_FALLBACK_TEMPLATES = {
+    "low": (
+        "Your voice screening result indicates a LOW risk of Parkinson's Disease-related voice changes. "
+        "The voice biomarkers analysed — including pitch stability, amplitude consistency, and spectral qualities "
+        "— are within the normal range for this screening tool.\n\n"
+        "While this is an encouraging result, it is important to remember that this is a screening tool, "
+        "not a clinical diagnosis. If you have any concerns about tremors, slowness of movement, or other "
+        "Parkinson's symptoms, please consult a neurologist regardless of this result.\n\n"
+        "We recommend repeating this screening periodically and maintaining a record of your voice health over time."
+    ),
+    "moderate": (
+        "Your voice screening result shows a MODERATE risk of Parkinson's Disease-related voice changes. "
+        "Some voice biomarkers — such as variations in pitch stability or spectral energy — show mild deviations "
+        "from the typical healthy range. This does not mean you have Parkinson's Disease.\n\n"
+        "Moderate risk can be caused by other conditions such as vocal strain, respiratory infections, "
+        "aging, or anxiety. However, it warrants a follow-up with a neurologist or ENT specialist who can "
+        "perform a comprehensive clinical evaluation.\n\n"
+        "Please book an appointment with a specialist and mention this screening result. Early evaluation "
+        "is always beneficial, whatever the cause."
+    ),
+    "high": (
+        "Your voice screening result indicates a HIGH risk of Parkinson's Disease-related voice changes. "
+        "Several voice biomarkers — including measures of pitch irregularity (jitter), amplitude variation "
+        "(shimmer), and voice clarity — show significant deviations associated with dysphonia patterns "
+        "seen in Parkinson's Disease.\n\n"
+        "This is NOT a diagnosis. Only a qualified neurologist can diagnose Parkinson's Disease through a "
+        "comprehensive clinical assessment. Many treatable conditions can cause similar voice patterns.\n\n"
+        "We strongly recommend seeking a neurological consultation as soon as possible. Please share this "
+        "screening report with your doctor. Early detection of Parkinson's Disease, when it does occur, "
+        "significantly improves the effectiveness of treatment and quality of life."
+    ),
+}
+
+
+def _fallback_recommendation(probability: float, risk_level: str) -> str:
+    return _FALLBACK_TEMPLATES.get(risk_level, _FALLBACK_TEMPLATES["moderate"])

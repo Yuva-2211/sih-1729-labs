@@ -12,6 +12,23 @@
 .swiftpm/
 migrate_working_dir/
 
+# Python / Backend
+__pycache__/
+*.py[cod]
+*.pyo
+.env                    # secrets — never commit real .env
+backend/.env
+*.joblib.bak
+_temp_model.pt
+
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
 # IntelliJ related
 *.iml
 *.ipr

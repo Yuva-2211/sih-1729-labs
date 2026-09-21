@@ -6,22 +6,27 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT_DIR / "backend"))
 
-import gradio as gr
-
 try:
     import spaces
 except ImportError:
     class spaces:
         @staticmethod
-        def GPU(fn=None, duration=60):
-            def decorator(f):
-                return f
-            return decorator if fn is None else fn
+        def GPU(*args, **kwargs):
+            def decorator(fn):
+                return fn
+            if len(args) == 1 and callable(args[0]):
+                return args[0]
+            return decorator
 
+@spaces.GPU(duration=10)
+def dummy_gpu():
+    return None
+
+import gradio as gr
 from backend.main import app
 import inference
 
-@spaces.GPU
+@spaces.GPU(duration=60)
 def analyze_voice_demo(audio_file):
     if not audio_file:
         return "Please upload or record an audio file."
@@ -59,5 +64,9 @@ app = gr.mount_gradio_app(app, demo, path="/")
 
 if __name__ == "__main__":
     import uvicorn
+    try:
+        dummy_gpu()
+    except Exception:
+        pass
     port = int(os.environ.get("PORT", 7860))
     uvicorn.run(app, host="0.0.0.0", port=port)

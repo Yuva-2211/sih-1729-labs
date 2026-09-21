@@ -1,3 +1,78 @@
+# NeuroVoice (SIH-1729 / SIH-26139)
+### AI-Powered Parkinson's Disease Screening via Vocal Biomarkers & Hybrid Quantum-Classical Machine Learning
+
+[![Flutter](https://img.shields.io/badge/Flutter-3.22+-02569B?logo=flutter&logoColor=white)](https://flutter.dev)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.111+-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.2+-EE4C2C?logo=pytorch&logoColor=white)](https://pytorch.org)
+[![PennyLane](https://img.shields.io/badge/PennyLane-Quantum_ML-brightgreen)](https://pennylane.ai)
+[![Groq Llama 3](https://img.shields.io/badge/Groq-Llama_3-f55036)](https://groq.com)
+[![Docker](https://img.shields.io/badge/Docker-Containerized-2496ED?logo=docker&logoColor=white)](https://docker.com)
+[![Render](https://img.shields.io/badge/Render-Deployable-46E3B7?logo=render&logoColor=white)](https://render.com)
+[![SQLite](https://img.shields.io/badge/SQLite-Local_Storage-003B57?logo=sqlite&logoColor=white)](https://sqlite.org)
+
+---
+
+## 🎯 Smart India Hackathon (SIH 2026) — Problem Statement #26139
+
+| Field | Details |
+|---|---|
+| **Problem Statement ID** | **26139** |
+| **Problem Statement Title** | **Hybrid Quantum Machine Learning Platform for Early Disease Detection** |
+| **Organization** | **Egreen Quanta** |
+| **Department** | **Egreen Quanta** |
+| **Category** | **Software** |
+| **Theme** | **MedTech / BioTech / HealthTech** |
+
+### 📋 Background
+Early and accurate detection of diseases significantly improves treatment outcomes and reduces healthcare costs. Classical machine learning models have achieved notable success in medical diagnosis; however, they often face limitations when dealing with high-dimensional, noisy, and complex biomedical data (e.g., genomics, medical imaging, acoustic biomarkers, and electronic health records).
+
+Quantum machine learning (QML) offers the potential to capture intricate patterns through quantum superposition and entanglement. Due to current hardware constraints, a hybrid quantum-classical approach provides a practical pathway to leverage quantum advantages while remaining executable on existing quantum simulators and near-term quantum devices.
+
+### 📝 Problem Description
+This problem focuses on designing and developing a hybrid quantum machine learning platform for early disease detection. The platform integrates classical pre-processing and feature engineering with quantum-enhanced learning models (such as quantum support vector machines, quantum neural networks, or variational quantum classifiers). It is applied to biomedical datasets for the early identification of diseases (specifically neurological conditions such as Parkinson's Disease). The system supports data ingestion, hybrid model training, prediction, explainability, and performance evaluation against purely classical baselines.
+
+### 🎯 Objectives
+- **Design a hybrid quantum-classical machine learning architecture** suitable for early disease detection.
+- **Develop quantum-enhanced classification/regression models** capable of processing high-dimensional biomedical data.
+- **Improve detection accuracy, sensitivity, and specificity** compared with classical machine learning baselines.
+- **Ensure the platform is scalable, interpretable, and compatible** with near-term quantum hardware and simulators (PennyLane / Qiskit).
+- **Incorporate data pre-processing, feature selection, and model explainability modules** (including generative LLM clinical narratives).
+- **Benchmark the hybrid approach against classical models** in terms of accuracy, computational efficiency, and generalization performance.
+
+### 💡 Expected Solution
+A fully functional hybrid quantum machine learning software platform capable of performing early disease detection on real or benchmark biomedical datasets. The solution includes data handling pipelines, hybrid quantum-classical model implementation, training and inference workflows, performance evaluation, explainability features, and comprehensive documentation.
+
+---
+
+## 📦 Delivery Table (Expected Deliverables)
+
+| S.No | Expected Deliverable | Description | NeuroVoice Implementation Component | Status |
+|:---:|---|---|---|:---:|
+| **1** | **Hybrid Quantum-Classical ML Architecture** | Integration of a Classical Deep MLP feature dimensionality reducer with a PennyLane 8-qubit Variational Quantum Circuit (VQC) with strongly entangling layers. | `backend/models.py`, `model_v2/` | ✅ Completed |
+| **2** | **Biomedical Ingestion & Feature Engineering** | High-precision acoustic signal processing pipeline extracting 26 clinical features (13 MFCCs, Jitter, Shimmer, HNR, Spectral Centroid/Roll-off, ZCR, RMS Energy). | `backend/feature_extraction.py`, `parselmouth`, `librosa` | ✅ Completed |
+| **3** | **Model Optimization & Edge Quantization** | Post-training dynamic 8-bit quantization (INT8) for both classical and hybrid networks, ensuring sub-50ms inference latency. | `backend/inference.py`, PyTorch Quantization | ✅ Completed |
+| **4** | **Classical vs. Hybrid Benchmarking Suite** | Comprehensive comparative evaluation benchmarking Classical FP32/INT8 against Hybrid Quantum FP32/INT8 on MDVR-KCL and UCI datasets. | `backend/benchmark.py`, `DOCUMENTATION.md` | ✅ Completed |
+| **5** | **AI Clinical Explainability & Reporting** | Generative clinical narrative engine via Groq Llama 3, translating numeric acoustic anomalies into actionable medical interpretations. | `backend/llm_recommendation.py` | ✅ Completed |
+| **6** | **Containerized Cloud Inference API** | Scalable FastAPI REST backend with eager model warm-up, CORS handling, audio validation, Swagger docs, and Docker runtime. | `backend/main.py`, `Dockerfile`, `render.yaml` | ✅ Completed |
+| **7** | **Cross-Platform Mobile Screening App** | Production-ready Flutter client featuring live audio capture, dual waveform visualizers (`fl_chart`), audio playback, and PDF-style report view. | `lib/`, Flutter 3.22+ | ✅ Completed |
+| **8** | **Privacy-Preserving On-Device Storage** | Offline-first SQLite database retaining patient screening histories and feature vectors locally without cloud telemetry leaks. | `lib/services/database_service.dart`, `sqflite` | ✅ Completed |
+| **9** | **Geospatial Specialist Referral** | Integrated movement disorder clinic locator via OpenStreetMap Overpass API without requiring proprietary map API keys or geotracking. | `lib/screens/neurologist_finder_screen.dart` | ✅ Completed |
+| **10** | **Comprehensive Technical Documentation** | Full architectural formulations, circuit designs, mathematical definitions, API contracts, and SaMD compliance guides. | [DOCUMENTATION.md](DOCUMENTATION.md) | ✅ Completed |
+
+---
+
+## 👥 Meet the Team
+
+| Member | Role | LinkedIn Profile |
+|---|---|---|
+| **Vishwa Kaaliya Moorthy** | **Team Lead & Data Scientist** | [![LinkedIn](https://img.shields.io/badge/LinkedIn-0A66C2?logo=linkedin&logoColor=white)](https://www.linkedin.com/in/vishwakaliyamoorthy/) |
+| **Rakesh Krishna Golla** | **App Developer** | [![LinkedIn](https://img.shields.io/badge/LinkedIn-0A66C2?logo=linkedin&logoColor=white)](https://www.linkedin.com/in/rakesh-krishna-golla-7757a1394/) |
+| **Yuva Shankar Narayana** | **ML Engineer** | [![LinkedIn](https://img.shields.io/badge/LinkedIn-0A66C2?logo=linkedin&logoColor=white)](https://www.linkedin.com/in/yuva-shankar-narayana/) |
+| **Pavithra H** | **UI/UX Designer** | [![LinkedIn](https://img.shields.io/badge/LinkedIn-0A66C2?logo=linkedin&logoColor=white)](https://www.linkedin.com/in/pavithra-h-048a8b321/) |
+| **Ranjini A** | **Data Scientist** | [![LinkedIn](https://img.shields.io/badge/LinkedIn-0A66C2?logo=linkedin&logoColor=white)](https://www.linkedin.com/in/ranjini-anbazhagan/) |
+
+---
+
 # NeuroVoice (SIH-1729) — Comprehensive System Documentation & Technical Specification
 
 ---
@@ -359,7 +434,53 @@ flutter run
 
 ---
 
-## 10. Verification & Quality Assurance
+## 10. Deploying Backend to Render (Cloud Hosting)
+
+The NeuroVoice backend is containerized and ready to deploy to [Render](https://render.com) using Docker. Because audio feature extraction requires system-level shared libraries (`libsndfile1` and `ffmpeg`), **Docker deployment is the recommended method** to guarantee flawless execution in production.
+
+### Method 1: One-Click Blueprint Deployment (Recommended)
+1. Ensure this repository is pushed to your GitHub account: `https://github.com/Yuva-2211/sih-1729-labs.git`.
+2. Navigate to [Render Dashboard](https://dashboard.render.com/) and sign in.
+3. Click **New +** → **Blueprint**.
+4. Connect your GitHub repository `sih-1729-labs`.
+5. Render detects the root [`render.yaml`](render.yaml) file automatically:
+   - **Service Name**: `neurovoice-backend`
+   - **Runtime**: `Docker` (using root `Dockerfile`)
+   - **Health Check Path**: `/api/v1/health`
+   - **Port**: `8000`
+6. (Optional) In the configuration screen, supply your `GROQ_API_KEY` for AI clinical recommendations.
+7. Click **Apply**. Render will automatically build the image and spin up your web service.
+
+---
+
+### Method 2: Manual Web Service Setup via Dashboard
+1. Go to [Render Dashboard](https://dashboard.render.com/) and click **New +** → **Web Service**.
+2. Choose **Build and deploy from a Git repository** and connect `sih-1729-labs`.
+3. Fill out the service settings:
+   - **Name**: `neurovoice-backend`
+   - **Region**: Select your preferred region (e.g., *Oregon (US West)* or *Singapore*)
+   - **Branch**: `main`
+   - **Language / Runtime**: **Docker**
+   - **Dockerfile Path**: `./Dockerfile`
+   - **Docker Context**: `.`
+   - **Instance Type**: **Free**
+4. Under **Advanced** → **Environment Variables**:
+   - `PORT`: `8000`
+   - `GROQ_API_KEY`: *(Optional: Your Groq API key `gsk_...` for LLM clinical summaries)*
+5. Under **Health Check Path**, enter: `/api/v1/health`.
+6. Click **Create Web Service**.
+
+Once deployed, your live endpoints will be:
+- **Service Base URL**: `https://<your-service-name>.onrender.com`
+- **Interactive Swagger Docs**: `https://<your-service-name>.onrender.com/docs`
+- **Health Probe**: `https://<your-service-name>.onrender.com/api/v1/health`
+
+> [!NOTE]
+> Free-tier instances on Render enter sleep mode after 15 minutes of inactivity. When a new screening request arrives, the first cold start may take 40–50 seconds while the container initializes and pre-warms the quantum/classical weights.
+
+---
+
+## 11. Verification & Quality Assurance
 
 ### Flutter Code Verification
 ```powershell
@@ -381,7 +502,7 @@ python backend/test_api.py
 
 ---
 
-## 11. Security, Privacy & Medical Compliance Considerations
+## 12. Security, Privacy & Medical Compliance Considerations
 
 1. **HIPAA / GDPR Edge Processing**:
    - Audio is sent over secured endpoints, and temporary audio files created on the server during extraction are immediately deleted via `try...finally` cleanup blocks.

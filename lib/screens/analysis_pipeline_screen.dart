@@ -130,40 +130,23 @@ class _AnalysisPipelineScreenState extends State<AnalysisPipelineScreen>
     } catch (e) {
       _uiTimer?.cancel();
       if (mounted) {
-        String err = e.toString().replaceFirst('Exception: ', '');
+        final rawErr = e.toString().toLowerCase();
+        String err;
 
-        // Strip raw API / server technical prefixes
-        err = err.replaceAll(RegExp(r'^API Error \(\d+\):\s*'), '');
-        err = err.replaceAll(RegExp(r'^Server error \(\d+\):\s*'), '');
-        // Clean out technical parameters like (RMS energy: 0.0001 < 0.005) or (flatness: ...)
-        err = err.replaceAll(RegExp(r'\s*\(RMS energy:[^\)]*\)'), '');
-        err = err.replaceAll(RegExp(r'\s*\(spectral flatness:[^\)]*\)'), '');
-        err = err.replaceAll(RegExp(r'\s*\(HNR:[^\)]*\)'), '');
-        err = err.replaceAll(RegExp(r'\s*\([0-9\.]+s of vocal sound detected\)'), '');
-        err = err.trim();
-
-        if (err.contains('SocketException') ||
-            err.contains('Connection refused') ||
-            err.contains('Failed host lookup')) {
-          err =
-              'The analysis service is currently unreachable. Please ensure the local backend server is running and try again.';
-        } else if (err.toLowerCase().contains('faint') ||
-            err.toLowerCase().contains('silent') ||
-            err.toLowerCase().contains('too quiet') ||
-            err.toLowerCase().contains('silence') ||
-            err.toLowerCase().contains('no vocal') ||
-            err.toLowerCase().contains('energy')) {
-          err =
-              'No audible speech was detected in your recording. Please hold your phone close and speak a sustained vowel /aaah/ clearly.';
-        } else if (err.toLowerCase().contains('short') ||
-            err.toLowerCase().contains('duration')) {
-          err =
-              'The recording was too short for clinical feature analysis. Please sustain your voice continuously for at least 5 seconds.';
-        } else if (err.toLowerCase().contains('noise') ||
-            err.toLowerCase().contains('static') ||
-            err.toLowerCase().contains('flatness')) {
-          err =
-              'Excessive background noise or static was detected. Please move to a quiet room and record your voice again.';
+        if (rawErr.contains('faint') ||
+            rawErr.contains('silent') ||
+            rawErr.contains('too quiet') ||
+            rawErr.contains('silence') ||
+            rawErr.contains('no vocal') ||
+            rawErr.contains('audible')) {
+          err = 'No clear speech detected. Please hold your phone closer and speak clearly.';
+        } else if (rawErr.contains('short') || rawErr.contains('duration')) {
+          err = 'Recording was too short. Please sustain your voice for at least 5 seconds.';
+        } else if (rawErr.contains('noise') || rawErr.contains('static') || rawErr.contains('flatness')) {
+          err = 'Excessive background noise detected. Please record in a quiet room.';
+        } else {
+          // Clean production user-facing message - no technical exceptions or production errors
+          err = 'Recording failed. Please record your voice again.';
         }
 
         setState(() {
@@ -329,17 +312,7 @@ class _AnalysisPipelineScreenState extends State<AnalysisPipelineScreen>
                             ),
                             const SizedBox(height: 16),
                             Text(
-                              (_errorMessage.toLowerCase().contains('audible') ||
-                                      _errorMessage.toLowerCase().contains('silent') ||
-                                      _errorMessage.toLowerCase().contains('faint'))
-                                  ? 'No Speech Detected'
-                                  : (_errorMessage.toLowerCase().contains('short') ||
-                                          _errorMessage.toLowerCase().contains('duration'))
-                                      ? 'Recording Too Short'
-                                      : (_errorMessage.toLowerCase().contains('noise') ||
-                                              _errorMessage.toLowerCase().contains('static'))
-                                          ? 'Noise Detected'
-                                          : 'Analysis Incomplete',
+                              'Recording Failed',
                               style: theme.textTheme.titleLarge?.copyWith(
                                 fontWeight: FontWeight.bold,
                                 color: AppColors.onSurface,

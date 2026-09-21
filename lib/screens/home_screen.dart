@@ -143,6 +143,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   runSpacing: 8,
                   children: [
                     ActionChip(
+                      label: const Text('Render Cloud'),
+                      avatar: const Icon(Icons.cloud_rounded, size: 16),
+                      onPressed: () {
+                        controller.text = 'https://sih-1729-labs.onrender.com';
+                      },
+                    ),
+                    ActionChip(
                       label: const Text('USB (127.0.0.1)'),
                       avatar: const Icon(Icons.usb_rounded, size: 16),
                       onPressed: () {

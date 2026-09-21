@@ -40,10 +40,10 @@ class ApiConfig {
 
   /// Dynamically resolves default backend host based on execution platform.
   static String get baseUrl {
-    if (_resolvedBaseUrl != null && _resolvedBaseUrl!.isNotEmpty) {
-      return _resolvedBaseUrl!;
-    }
-    return candidateUrls.first;
+    final raw = (_resolvedBaseUrl != null && _resolvedBaseUrl!.isNotEmpty)
+        ? _resolvedBaseUrl!
+        : candidateUrls.first;
+    return raw.replaceAll(RegExp(r'/+$'), '');
   }
 
   static const Duration timeout = Duration(seconds: 60);
@@ -208,11 +208,12 @@ class NeuralVoiceApi {
     debugPrint('[NeuralVoiceApi] Probing candidates: ${ApiConfig.candidateUrls}');
     final futures = ApiConfig.candidateUrls.map((host) async {
       try {
-        final uri = Uri.parse('$host/api/v1/health');
-        final resp = await http.get(uri).timeout(const Duration(seconds: 3));
+        final clean = host.replaceAll(RegExp(r'/+$'), '');
+        final uri = Uri.parse('$clean/api/v1/health');
+        final resp = await http.get(uri).timeout(const Duration(seconds: 10));
         if (resp.statusCode == 200) {
-          debugPrint('[NeuralVoiceApi] Success reaching: $host');
-          return host;
+          debugPrint('[NeuralVoiceApi] Success reaching: $clean');
+          return clean;
         }
       } catch (e) {
         debugPrint('[NeuralVoiceApi] Could not reach $host: $e');
@@ -238,7 +239,7 @@ class NeuralVoiceApi {
     try {
       final resp = await http
           .get(Uri.parse('$_base/api/v1/health'))
-          .timeout(const Duration(seconds: 3));
+          .timeout(const Duration(seconds: 10));
       if (resp.statusCode == 200) return true;
     } catch (_) {}
 
@@ -253,7 +254,7 @@ class NeuralVoiceApi {
       debugPrint('[NeuralVoiceApi] Fetching models status from $_base/api/v1/models');
       final resp = await http
           .get(Uri.parse('$_base/api/v1/models'))
-          .timeout(const Duration(seconds: 3));
+          .timeout(const Duration(seconds: 12));
       if (resp.statusCode == 200) {
         debugPrint('[NeuralVoiceApi] Models status successfully fetched from $_base');
         return ModelsStatus.fromJson(jsonDecode(resp.body));
@@ -265,7 +266,7 @@ class NeuralVoiceApi {
         try {
           final resp = await http
               .get(Uri.parse('$foundHost/api/v1/models'))
-              .timeout(const Duration(seconds: 3));
+              .timeout(const Duration(seconds: 12));
           if (resp.statusCode == 200) {
             debugPrint('[NeuralVoiceApi] Models status retrieved from probed host: $foundHost');
             return ModelsStatus.fromJson(jsonDecode(resp.body));

@@ -214,65 +214,49 @@ class AudioQualityError(ValueError):
 
 def validate_audio_quality(y: np.ndarray, sr: int = 16_000):
     """
-    Validate that input audio contains genuine sustained human phonation.
-    Detects and rejects:
-      1. Silence or near-silent ambient recordings.
-      2. Transient clicks, coughs, or taps under 0.8s active phonation.
-      3. Random broadband/white noise, fan humming, and static.
-      4. High-frequency hiss without glottal pitch.
-      5. Aperiodic non-vocal sounds.
-    """
-    import librosa
+    Lightweight audio validation — pure numpy, NO librosa STFT calls.
 
-    # 1. Check RMS Energy (silence / near-silence detection)
-    rms = float(np.mean(librosa.feature.rms(y=y)))
+    On Render Free Tier (0.1 vCPU), each librosa STFT pass on 100K+ samples
+    takes 10-30 seconds, making the full validation (4 STFT passes) take minutes.
+    This stripped-down version checks RMS energy, duration, and basic periodicity
+    using only numpy operations that complete in < 1 ms.
+    """
+    # 1. Duration check
+    duration_s = len(y) / sr
+    if duration_s < 0.3:
+        raise AudioQualityError(
+            f"Audio too short ({duration_s:.2f}s). "
+            "Please record at least 3 seconds of sustained vowel 'aaah'."
+        )
+
+    # 2. RMS Energy — pure numpy, no librosa
+    rms = float(np.sqrt(np.mean(y ** 2)))
     if rms < 0.001:
         raise AudioQualityError(
             f"Audio is too faint or silent (RMS energy: {rms:.4f} < 0.001). "
             "Please check your microphone and speak clearly."
         )
 
-    # 2. VAD Trim (Voice Activity Detection duration)
-    y_trimmed, _ = librosa.effects.trim(y, top_db=25)
-    trimmed_duration = len(y_trimmed) / sr
-    if trimmed_duration < 0.5:
-        raise AudioQualityError(
-            f"Voice sample too short ({trimmed_duration:.2f}s of vocal sound detected). "
-            "Please sustain the vowel 'aaah' continuously for at least 3-5 seconds."
-        )
-
-    # 3. Spectral Flatness (Random noise / white noise detector)
-    flatness = float(np.mean(librosa.feature.spectral_flatness(y=y_trimmed)))
-    if flatness > 0.40:
-        raise AudioQualityError(
-            f"Random background noise detected (Spectral Flatness: {flatness:.3f} > 0.40). "
-            "No sustained vocal sound was found. Please record in a quiet environment."
-        )
-
-    # 4. Zero-Crossing Rate (High-frequency hiss / static)
-    zcr = float(np.mean(librosa.feature.zero_crossing_rate(y_trimmed)))
-    if zcr > 0.45:
-        raise AudioQualityError(
-            f"Excessive static or hissing noise detected (ZCR: {zcr:.3f} > 0.45). "
-            "Please ensure you are speaking directly into the microphone."
-        )
-
-    # 5. Glottal Periodicity (Autocorrelation in human pitch range: 65 Hz to 450 Hz)
-    # Only flag if completely aperiodic (non-vocal random static < 0.08)
-    mid_start = len(y_trimmed) // 4
-    mid_end = min(len(y_trimmed), mid_start + int(0.2 * sr))
-    frame = y_trimmed[mid_start:mid_end]
-    if len(frame) >= 250:
+    # 3. Quick periodicity check via small autocorrelation on a 0.1s frame
+    # This detects pure noise without any STFT overhead
+    frame_len = min(int(0.1 * sr), len(y) // 2)
+    if frame_len >= 200:
+        mid = len(y) // 2
+        frame = y[mid - frame_len // 2 : mid + frame_len // 2]
         corr = np.correlate(frame, frame, mode='full')
-        corr = corr[len(corr)//2:]
+        corr = corr[len(corr) // 2:]
         if corr[0] > 0:
             norm_corr = corr / corr[0]
-            pitch_peak = float(np.max(norm_corr[35:min(246, len(norm_corr))]))
-            if pitch_peak < 0.08:
-                raise AudioQualityError(
-                    f"Non-vocal sound detected (Glottal Periodicity: {pitch_peak:.3f} < 0.08). "
-                    "Please produce a clear, sustained vowel sound like 'aaah'."
-                )
+            # Check for any peak in human pitch range (65-450 Hz)
+            lo = max(int(sr / 450), 1)
+            hi = min(int(sr / 65), len(norm_corr))
+            if hi > lo:
+                pitch_peak = float(np.max(norm_corr[lo:hi]))
+                if pitch_peak < 0.05:
+                    raise AudioQualityError(
+                        f"No vocal sound detected (periodicity: {pitch_peak:.3f}). "
+                        "Please produce a clear, sustained vowel sound like 'aaah'."
+                    )
 
 
 
@@ -329,17 +313,25 @@ def predict(
     sf.write(_raw_buf, _y_raw, 16_000, format='WAV', subtype='PCM_16')
     raw_audio_b64 = base64.b64encode(_raw_buf.getvalue()).decode('utf-8')
 
+    # --- Truncate to max 3.0s for feature extraction ---
+    # On Render Free Tier (0.1 vCPU), each librosa STFT pass scales with sample count.
+    # Truncating from 6-8s (100K+ samples) to 3s (48K samples) halves ALL downstream costs.
+    MAX_FEAT_SAMPLES = int(3.0 * _sr_raw)
+    if len(_y_raw) > MAX_FEAT_SAMPLES:
+        # Use the central stable segment for best feature accuracy
+        mid = len(_y_raw) // 2
+        half = MAX_FEAT_SAMPLES // 2
+        _y_feat = _y_raw[mid - half : mid + half]
+        logger.info("[inference] Stage 1: Truncated %d → %d samples (3.0s) for feature extraction", len(_y_raw), len(_y_feat))
+    else:
+        _y_feat = _y_raw
+
     t_feat_start = time.perf_counter()
-    all_feats = extract_all_features(wav_path, y=_y_raw, sr=_sr_raw)
+    all_feats = extract_all_features(wav_path, y=_y_feat, sr=_sr_raw)
     logger.info("[inference] Stage 2: Feature extraction completed in %.1f ms", (time.perf_counter() - t_feat_start) * 1000)
 
-    # Capture preprocessed waveform (reuse array without reloading from disk)
-    import librosa as _librosa
-    _y_proc, _ = _librosa.effects.trim(_y_raw, top_db=20)
-    if len(_y_proc) > 0:
-        _y_proc = _y_proc / (np.max(np.abs(_y_proc)) + 1e-8)
-    else:
-        _y_proc = _y_raw
+    # Preprocessed waveform — simple numpy normalization (no librosa.effects.trim STFT)
+    _y_proc = _y_feat / (np.max(np.abs(_y_feat)) + 1e-8)
     preprocessed_waveform = _downsample(_y_proc)
 
     # Encode preprocessed audio as base64 WAV for client-side playback

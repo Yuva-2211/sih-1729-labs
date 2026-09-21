@@ -15,7 +15,7 @@ class ApiConfig {
     _resolvedBaseUrl = url.endsWith('/') ? url.substring(0, url.length - 1) : url;
   }
 
-  /// Candidate URLs to probe - cloud deployment prioritized
+  /// Candidate URLs to probe - Live Render Cloud Backend prioritized
   static List<String> get candidateUrls {
     if (kIsWeb) {
       return const [
@@ -25,11 +25,10 @@ class ApiConfig {
     }
     if (Platform.isAndroid) {
       return const [
-        'https://sih-1729-labs.onrender.com', // Live Render Cloud Backend
-        'http://127.0.0.1:8000',               // Physical device (with adb reverse)
-        'http://localhost:8000',               // Alternative localhost
-        'http://10.0.2.2:8000',                 // Android Emulator
-        'http://10.233.29.227:8000',            // Local Wi-Fi network IP
+        'https://sih-1729-labs.onrender.com',    // Live Render Cloud Backend
+        'http://127.0.0.1:8000',                 // Local via adb reverse (fallback)
+        'http://10.233.9.13:8000',               // Local Wi-Fi network IP (fallback)
+        'http://10.0.2.2:8000',                  // Android Emulator (fallback)
       ];
     }
     return const [
@@ -46,7 +45,8 @@ class ApiConfig {
     return raw.replaceAll(RegExp(r'/+$'), '');
   }
 
-  static const Duration timeout = Duration(seconds: 60);
+  // Timeout for predict calls — generous to handle Render cold start (~30s) + LLM time
+  static const Duration timeout = Duration(seconds: 120);
 }
 
 // ---------------------------------------------------------------------------
@@ -213,7 +213,8 @@ class NeuralVoiceApi {
       try {
         final clean = host.replaceAll(RegExp(r'/+$'), '');
         final uri = Uri.parse('$clean/api/v1/health');
-        final resp = await http.get(uri).timeout(const Duration(seconds: 6));
+        // 15s per host — enough for Render free-tier cold start (~10-30s)
+        final resp = await http.get(uri).timeout(const Duration(seconds: 15));
         if (resp.statusCode == 200) {
           ApiConfig.setBaseUrl(clean);
           debugPrint('[NeuralVoiceApi] Active backend resolved to: $clean');
@@ -288,6 +289,7 @@ class NeuralVoiceApi {
       'patient_name': patientName,
     });
 
+    debugPrint('[NeuralVoiceApi] Uploading audio ($filePath) to $uri...');
     final request = http.MultipartRequest('POST', uri);
     request.files.add(
       await http.MultipartFile.fromPath(
@@ -299,6 +301,7 @@ class NeuralVoiceApi {
 
     final streamedResponse = await request.send().timeout(ApiConfig.timeout);
     final response = await http.Response.fromStream(streamedResponse);
+    debugPrint('[NeuralVoiceApi] Upload response code: ${response.statusCode}');
 
     if (response.statusCode == 200) {
       final res = PredictionResult.fromJson(jsonDecode(response.body));
@@ -310,6 +313,7 @@ class NeuralVoiceApi {
       } catch (_) {} // Never let DB errors break the prediction flow
       return res;
     } else {
+      debugPrint('[NeuralVoiceApi] Server returned error body: ${response.body}');
       String detail = 'Unknown server error (${response.statusCode})';
       try {
         final body = jsonDecode(response.body);
@@ -347,8 +351,10 @@ class NeuralVoiceApi {
         patientName: patientName,
       );
     } catch (e) {
+      debugPrint('[NeuralVoiceApi] Upload to $_base failed: $e. Probing for fallback host...');
       final newHost = await _probeWorkingHost();
       if (newHost != null && newHost != _base) {
+        debugPrint('[NeuralVoiceApi] Retrying upload to active host: $newHost');
         return await _executeAudioUpload(
           newHost,
           filePath,

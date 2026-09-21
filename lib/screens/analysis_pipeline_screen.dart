@@ -131,6 +131,7 @@ class _AnalysisPipelineScreenState extends State<AnalysisPipelineScreen>
         );
       }
     } catch (e) {
+      debugPrint('[AnalysisPipeline] Pipeline error caught: $e');
       _uiTimer?.cancel();
       if (_cancelled || !mounted) return; // Fix #7: ignore errors after cancel
       final rawErr = e.toString().toLowerCase();
@@ -147,9 +148,16 @@ class _AnalysisPipelineScreenState extends State<AnalysisPipelineScreen>
         err = 'Recording was too short. Please sustain your voice for at least 5 seconds.';
       } else if (rawErr.contains('noise') || rawErr.contains('static') || rawErr.contains('flatness')) {
         err = 'Excessive background noise detected. Please record in a quiet room.';
+      } else if (rawErr.contains('timeout') ||
+          rawErr.contains('timed out') ||
+          rawErr.contains('connection') ||
+          rawErr.contains('socket') ||
+          rawErr.contains('network') ||
+          rawErr.contains('failed host') ||
+          rawErr.contains('unreachable')) {
+        err = 'Server is waking up — this can take up to 30 seconds on first use. Please try again.';
       } else {
-        // Clean production user-facing message - no technical exceptions or production errors
-        err = 'Recording failed. Please record your voice again.';
+        err = 'Analysis failed. Please try again in a moment.';
       }
 
       setState(() {
@@ -219,6 +227,16 @@ class _AnalysisPipelineScreenState extends State<AnalysisPipelineScreen>
                 'Processing your voice through quantum and classical models.',
                 style: theme.textTheme.bodyMedium
                     ?.copyWith(color: AppColors.onSurfaceVariant),
+              ),
+              const SizedBox(height: 4),
+              // Cold-start hint so users aren't surprised by a 30s wait
+              Text(
+                'First run may take ~30s while the server starts up.',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: AppColors.onSurfaceVariant.withValues(alpha: 0.6),
+                  fontSize: 12,
+                  fontStyle: FontStyle.italic,
+                ),
               ),
               const SizedBox(height: 16),
 
@@ -315,7 +333,17 @@ class _AnalysisPipelineScreenState extends State<AnalysisPipelineScreen>
                             ),
                             const SizedBox(height: 16),
                             Text(
-                              'Recording Failed',
+                              (_errorMessage.toLowerCase().contains('waking up') ||
+                                      _errorMessage.toLowerCase().contains('server') ||
+                                      _errorMessage.toLowerCase().contains('timed out') ||
+                                      _errorMessage.toLowerCase().contains('timeout'))
+                                  ? 'Server Connection Issue'
+                                  : (_errorMessage.toLowerCase().contains('short') ||
+                                          _errorMessage.toLowerCase().contains('noise') ||
+                                          _errorMessage.toLowerCase().contains('speech') ||
+                                          _errorMessage.toLowerCase().contains('vocal'))
+                                      ? 'Audio Quality Issue'
+                                      : 'Analysis Issue',
                               style: theme.textTheme.titleLarge?.copyWith(
                                 fontWeight: FontWeight.bold,
                                 color: AppColors.onSurface,
@@ -371,6 +399,41 @@ class _AnalysisPipelineScreenState extends State<AnalysisPipelineScreen>
                               ),
                             ),
                             const SizedBox(height: 24),
+                            // "Try Again" for server/timeout errors; "Re-record" for audio errors
+                            if (_errorMessage.contains('waking up') ||
+                                _errorMessage.contains('try again'))
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 10),
+                                child: SizedBox(
+                                  width: double.infinity,
+                                  height: 46,
+                                  child: ElevatedButton.icon(
+                                    onPressed: () {
+                                      setState(() {
+                                        _hasError = false;
+                                        _cancelled = false;
+                                        _currentStep = 0;
+                                        _progress = 0.0;
+                                        _errorMessage = '';
+                                      });
+                                      Future.delayed(
+                                        const Duration(milliseconds: 200),
+                                        _runPipeline,
+                                      );
+                                    },
+                                    icon: const Icon(Icons.refresh_rounded, size: 18),
+                                    label: const Text('Try Again'),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppColors.primaryContainer,
+                                      foregroundColor: AppColors.onPrimary,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      elevation: 0,
+                                    ),
+                                  ),
+                                ),
+                              ),
                             SizedBox(
                               width: double.infinity,
                               height: 46,
@@ -379,8 +442,14 @@ class _AnalysisPipelineScreenState extends State<AnalysisPipelineScreen>
                                 icon: const Icon(Icons.mic_rounded, size: 18),
                                 label: const Text('Record Voice Again'),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppColors.primaryContainer,
-                                  foregroundColor: AppColors.onPrimary,
+                                  backgroundColor: _errorMessage.contains('waking up') ||
+                                          _errorMessage.contains('try again')
+                                      ? AppColors.surfaceContainerHighest
+                                      : AppColors.primaryContainer,
+                                  foregroundColor: _errorMessage.contains('waking up') ||
+                                          _errorMessage.contains('try again')
+                                      ? AppColors.onSurface
+                                      : AppColors.onPrimary,
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(8),
                                   ),

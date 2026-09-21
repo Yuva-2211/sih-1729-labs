@@ -32,6 +32,10 @@ BASE_DIR = Path(__file__).parent
 _env_model_dir = os.environ.get("MODEL_DIR")
 if _env_model_dir and Path(_env_model_dir).exists():
     MODEL_DIR = Path(_env_model_dir)
+elif (BASE_DIR.parent / "model_v2" / "v2-model-training").exists():
+    MODEL_DIR = BASE_DIR.parent / "model_v2" / "v2-model-training"
+elif (BASE_DIR / "model_v2" / "v2-model-training").exists():
+    MODEL_DIR = BASE_DIR / "model_v2" / "v2-model-training"
 elif (BASE_DIR.parent / "model_v2" / "v2-model training").exists():
     MODEL_DIR = BASE_DIR.parent / "model_v2" / "v2-model training"
 elif (BASE_DIR / "model_v2" / "v2-model training").exists():
@@ -39,7 +43,7 @@ elif (BASE_DIR / "model_v2" / "v2-model training").exists():
 elif (BASE_DIR / "model").exists():
     MODEL_DIR = BASE_DIR / "model"
 else:
-    MODEL_DIR = BASE_DIR.parent / "model_v2" / "v2-model training"
+    MODEL_DIR = BASE_DIR.parent / "model_v2" / "v2-model-training"
 
 if not MODEL_DIR.exists():
     raise FileNotFoundError(f"V2 Serving model directory not found at: {MODEL_DIR}")

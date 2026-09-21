@@ -155,7 +155,7 @@ def generate_llm_recommendation(
         prompt = _build_prompt(probability, risk_level, selected_features, model_used, patient_name=patient_name)
 
         response = client.chat.completions.create(
-            model="llama-3.1-70b-versatile",   # fast, smart, free tier
+            model="llama-3.3-70b-versatile",   # current Groq production model
             messages=[
                 {
                     "role": "system",

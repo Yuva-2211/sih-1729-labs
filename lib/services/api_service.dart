@@ -19,20 +19,23 @@ class ApiConfig {
   static List<String> get candidateUrls {
     if (kIsWeb) {
       return const [
-        'https://sih-1729-labs.onrender.com',
+        'https://yuva-2211-sih-1729-nv.hf.space', // Hugging Face Space (2 vCPU, 16GB RAM)
+        'https://sih-1729-labs.onrender.com',      // Render Cloud Backend
         'http://127.0.0.1:8000',
       ];
     }
     if (Platform.isAndroid) {
       return const [
-        'https://sih-1729-labs.onrender.com', // Live Render Cloud Backend
-        'http://127.0.0.1:8000',               // Physical device (with adb reverse)
-        'http://localhost:8000',               // Alternative localhost
-        'http://10.0.2.2:8000',                 // Android Emulator
-        'http://10.233.29.227:8000',            // Local Wi-Fi network IP
+        'https://yuva-2211-sih-1729-nv.hf.space', // Hugging Face Space (2 vCPU, 16GB RAM)
+        'https://sih-1729-labs.onrender.com',      // Render Cloud Backend
+        'http://127.0.0.1:8000',                  // Physical device (with adb reverse)
+        'http://localhost:8000',                  // Alternative localhost
+        'http://10.0.2.2:8000',                    // Android Emulator
+        'http://10.233.29.227:8000',               // Local Wi-Fi network IP
       ];
     }
     return const [
+      'https://yuva-2211-sih-1729-nv.hf.space',
       'https://sih-1729-labs.onrender.com',
       'http://127.0.0.1:8000',
     ];

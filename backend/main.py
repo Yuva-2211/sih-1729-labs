@@ -207,7 +207,7 @@ async def list_models():
     tags=["Prediction"],
     summary="Predict PD risk from raw audio",
 )
-async def predict_audio(
+def predict_audio(
     file: UploadFile = File(
         ...,
         description=(

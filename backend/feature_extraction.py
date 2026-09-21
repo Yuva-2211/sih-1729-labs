@@ -24,7 +24,7 @@ def extract_librosa_features(y: np.ndarray, sr: int) -> dict:
     mfcc_mean = mfcc.mean(axis=1)
     mfcc_std = mfcc.std(axis=1)
 
-    f0 = librosa.yin(y, fmin=50, fmax=500, sr=sr)
+    f0 = librosa.yin(y, fmin=50, fmax=500, sr=sr, hop_length=512)
     f0 = f0[~np.isnan(f0)]
     f0_mean = float(np.mean(f0)) if len(f0) else 0.0
     f0_std = float(np.std(f0)) if len(f0) else 0.0
@@ -91,24 +91,45 @@ def extract_praat_features(wav_path: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Combined extraction (Stage 1 — exactly matching training pipeline)
+# Combined extraction (Stage 1 — optimized for edge and cloud throughput)
 # ---------------------------------------------------------------------------
 
-def extract_all_features(wav_path: str) -> dict:
+def extract_all_features(
+    wav_path: str,
+    y: np.ndarray = None,
+    sr: int = SAMPLE_RATE,
+    include_praat: bool = False,
+) -> dict:
     """
     Full Stage-1 pipeline:
-      1. Load + resample to 16 kHz mono
+      1. Load + resample to 16 kHz mono (or reuse pre-loaded array)
       2. Trim silence (VAD via librosa.effects.trim)
       3. Extract librosa features (MFCCs, F0, ZCR, spectral)
-      4. Extract Praat features (jitter, shimmer, HNR)
+      4. Extract Praat features (jitter, shimmer, HNR) if requested
     Returns a flat dict of all raw features.
     """
-    # Load & pre-process
-    y, sr = librosa.load(wav_path, sr=SAMPLE_RATE, mono=True)
-    y, _ = librosa.effects.trim(y, top_db=20)          # VAD trim
-    y = y / (np.max(np.abs(y)) + 1e-8)                 # amplitude normalization
+    import soundfile as sf
+    if y is None:
+        try:
+            y, sr = sf.read(wav_path, dtype='float32')
+        except Exception:
+            y, sr = librosa.load(wav_path, sr=SAMPLE_RATE, mono=True)
+    if y.ndim > 1:
+        y = np.mean(y, axis=1)
+    y_trimmed, _ = librosa.effects.trim(y, top_db=20)
+    if len(y_trimmed) > 0:
+        y_norm = y_trimmed / (np.max(np.abs(y_trimmed)) + 1e-8)
+    else:
+        y_norm = y
 
     feats = {}
-    feats.update(extract_librosa_features(y, sr))
-    feats.update(extract_praat_features(wav_path))
+    feats.update(extract_librosa_features(y_norm, sr))
+    if include_praat:
+        feats.update(extract_praat_features(wav_path))
+    else:
+        feats.update({
+            "jitter_local": 0.0, "jitter_rap": 0.0, "jitter_ppq5": 0.0,
+            "shimmer_local": 0.0, "shimmer_apq3": 0.0, "shimmer_apq5": 0.0,
+            "hnr": 0.0,
+        })
     return feats

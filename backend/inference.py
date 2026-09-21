@@ -289,9 +289,19 @@ def predict(
     # --- Stage 1+2: Audio preprocessing + Feature extraction ---
     t0 = time.perf_counter()
 
-    # Capture raw waveform BEFORE any processing
-    import librosa as _librosa
-    _y_raw, _sr_raw = _librosa.load(wav_path, sr=16_000, mono=True)
+    # Capture raw waveform BEFORE any processing (fast single read)
+    try:
+        _y_raw, _sr_raw = sf.read(wav_path, dtype='float32')
+        if _sr_raw != 16_000:
+            import librosa as _librosa
+            _y_raw = _librosa.resample(_y_raw, orig_sr=_sr_raw, target_sr=16_000)
+            _sr_raw = 16_000
+    except Exception:
+        import librosa as _librosa
+        _y_raw, _sr_raw = _librosa.load(wav_path, sr=16_000, mono=True)
+
+    if _y_raw.ndim > 1:
+        _y_raw = np.mean(_y_raw, axis=1)
 
     # Validate audio quality to immediately reject random noise or silence
     validate_audio_quality(_y_raw, _sr_raw)
@@ -303,12 +313,15 @@ def predict(
     sf.write(_raw_buf, _y_raw, 16_000, format='WAV', subtype='PCM_16')
     raw_audio_b64 = base64.b64encode(_raw_buf.getvalue()).decode('utf-8')
 
-    all_feats = extract_all_features(wav_path)
+    all_feats = extract_all_features(wav_path, y=_y_raw, sr=_sr_raw)
 
-    # Capture preprocessed waveform (after VAD + normalisation, same as training pipeline)
-    _y_proc, _ = _librosa.load(wav_path, sr=16_000, mono=True)
-    _y_proc, _ = _librosa.effects.trim(_y_proc, top_db=20)
-    _y_proc = _y_proc / (np.max(np.abs(_y_proc)) + 1e-8)
+    # Capture preprocessed waveform (reuse array without reloading from disk)
+    import librosa as _librosa
+    _y_proc, _ = _librosa.effects.trim(_y_raw, top_db=20)
+    if len(_y_proc) > 0:
+        _y_proc = _y_proc / (np.max(np.abs(_y_proc)) + 1e-8)
+    else:
+        _y_proc = _y_raw
     preprocessed_waveform = _downsample(_y_proc)
 
     # Encode preprocessed audio as base64 WAV for client-side playback

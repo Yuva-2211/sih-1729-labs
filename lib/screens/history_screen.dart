@@ -167,25 +167,33 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Padding(
-                        padding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
+                        padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Screening History',
-                                  style: theme.textTheme.headlineLarge,
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  '${_reports.length} report${_reports.length == 1 ? '' : 's'} stored locally',
-                                  style: theme.textTheme.bodyMedium
-                                      ?.copyWith(color: AppColors.onSurfaceVariant),
-                                ),
-                              ],
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Screening History',
+                                    style: theme.textTheme.titleLarge?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '${_reports.length} report${_reports.length == 1 ? '' : 's'} stored locally',
+                                    style: theme.textTheme.bodySmall
+                                        ?.copyWith(color: AppColors.onSurfaceVariant),
+                                  ),
+                                ],
+                              ),
                             ),
+                            const SizedBox(width: 8),
                             _buildSummaryChips(theme),
                           ],
                         ),
@@ -335,29 +343,36 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           _formatDate(r.timestamp),
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: AppColors.onSurfaceVariant,
+                            fontSize: 11,
                           ),
                         ),
                         const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: AppColors.surfaceContainer,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.person_outline_rounded, size: 10, color: AppColors.onSurfaceVariant),
-                              const SizedBox(width: 2),
-                              Text(
-                                r.patientName,
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  color: AppColors.onSurfaceVariant,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w600,
+                        Flexible(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: AppColors.surfaceContainer,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.person_outline_rounded, size: 10, color: AppColors.onSurfaceVariant),
+                                const SizedBox(width: 2),
+                                Flexible(
+                                  child: Text(
+                                    r.patientName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.labelSmall?.copyWith(
+                                      color: AppColors.onSurfaceVariant,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ],
@@ -375,21 +390,27 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     const SizedBox(height: 6),
                     Row(
                       children: [
-                        Icon(Icons.memory_outlined, size: 12, color: AppColors.outline),
+                        const Icon(Icons.memory_outlined, size: 12, color: AppColors.outline),
                         const SizedBox(width: 4),
-                        Text(
-                          r.modelUsed,
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: AppColors.outline,
+                        Flexible(
+                          child: Text(
+                            r.modelUsed,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: AppColors.outline,
+                              fontSize: 10,
+                            ),
                           ),
                         ),
-                        const SizedBox(width: 12),
-                        Icon(Icons.timer_outlined, size: 12, color: AppColors.outline),
+                        const SizedBox(width: 8),
+                        const Icon(Icons.timer_outlined, size: 12, color: AppColors.outline),
                         const SizedBox(width: 4),
                         Text(
                           '${r.latencyMs.toStringAsFixed(0)} ms',
                           style: theme.textTheme.labelSmall?.copyWith(
                             color: AppColors.outline,
+                            fontSize: 10,
                           ),
                         ),
                       ],

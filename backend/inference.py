@@ -214,50 +214,66 @@ class AudioQualityError(ValueError):
 
 def validate_audio_quality(y: np.ndarray, sr: int = 16_000):
     """
-    Lightweight audio validation — pure numpy, NO librosa STFT calls.
-
-    On Render Free Tier (0.1 vCPU), each librosa STFT pass on 100K+ samples
-    takes 10-30 seconds, making the full validation (4 STFT passes) take minutes.
-    This stripped-down version checks RMS energy, duration, and basic periodicity
-    using only numpy operations that complete in < 1 ms.
+    Validate that input audio contains genuine sustained human phonation.
+    Detects and rejects:
+      1. Silence or near-silent ambient recordings.
+      2. Transient clicks, coughs, or taps under 0.8s active phonation.
+      3. Random broadband/white noise, fan humming, and static.
+      4. High-frequency hiss without glottal pitch.
+      5. Aperiodic non-vocal sounds.
     """
-    # 1. Duration check
-    duration_s = len(y) / sr
-    if duration_s < 0.3:
-        raise AudioQualityError(
-            f"Audio too short ({duration_s:.2f}s). "
-            "Please record at least 3 seconds of sustained vowel 'aaah'."
-        )
+    import librosa
 
-    # 2. RMS Energy — pure numpy, no librosa
-    rms = float(np.sqrt(np.mean(y ** 2)))
-    if rms < 0.001:
+    # 1. Check RMS Energy (silence / near-silence detection)
+    rms = float(np.mean(librosa.feature.rms(y=y)))
+    if rms < 0.005:
         raise AudioQualityError(
-            f"Audio is too faint or silent (RMS energy: {rms:.4f} < 0.001). "
+            f"Audio is too faint or silent (RMS energy: {rms:.4f} < 0.005). "
             "Please check your microphone and speak clearly."
         )
 
-    # 3. Quick periodicity check via small autocorrelation on a 0.1s frame
-    # This detects pure noise without any STFT overhead
-    frame_len = min(int(0.1 * sr), len(y) // 2)
-    if frame_len >= 200:
-        mid = len(y) // 2
-        frame = y[mid - frame_len // 2 : mid + frame_len // 2]
+    # 2. VAD Trim (Voice Activity Detection duration)
+    y_trimmed, _ = librosa.effects.trim(y, top_db=20)
+    trimmed_duration = len(y_trimmed) / sr
+    if trimmed_duration < 0.8:
+        raise AudioQualityError(
+            f"Voice sample too short ({trimmed_duration:.2f}s of vocal sound detected). "
+            "Please sustain the vowel 'aaah' continuously for at least 3-5 seconds."
+        )
+
+    # 3. Spectral Flatness (Random noise / white noise detector)
+    flatness = float(np.mean(librosa.feature.spectral_flatness(y=y_trimmed)))
+    if flatness > 0.18:
+        raise AudioQualityError(
+            f"Random background noise detected (Spectral Flatness: {flatness:.3f} > 0.18). "
+            "No sustained harmonic human voice was found. Please record in a quiet environment."
+        )
+
+    # 4. Zero-Crossing Rate (High-frequency hiss / static)
+    zcr = float(np.mean(librosa.feature.zero_crossing_rate(y_trimmed)))
+    if zcr > 0.32:
+        raise AudioQualityError(
+            f"Excessive static or hissing noise detected (ZCR: {zcr:.3f} > 0.32). "
+            "Please ensure you are speaking directly into the microphone."
+        )
+
+    # 5. Glottal Periodicity (Autocorrelation in human pitch range: 65 Hz to 450 Hz)
+    mid_start = len(y_trimmed) // 4
+    mid_end = min(len(y_trimmed), mid_start + int(0.2 * sr))
+    frame = y_trimmed[mid_start:mid_end]
+    if len(frame) >= 250:
         corr = np.correlate(frame, frame, mode='full')
-        corr = corr[len(corr) // 2:]
+        corr = corr[len(corr)//2:]
         if corr[0] > 0:
             norm_corr = corr / corr[0]
-            # Check for any peak in human pitch range (65-450 Hz)
-            lo = max(int(sr / 450), 1)
-            hi = min(int(sr / 65), len(norm_corr))
-            if hi > lo:
-                pitch_peak = float(np.max(norm_corr[lo:hi]))
-                if pitch_peak < 0.05:
-                    raise AudioQualityError(
-                        f"No vocal sound detected (periodicity: {pitch_peak:.3f}). "
-                        "Please produce a clear, sustained vowel sound like 'aaah'."
-                    )
-
+            # Lag range for 65 Hz to 450 Hz at 16 kHz:
+            # 16000 / 450 ~= 35, 16000 / 65 ~= 246
+            pitch_peak = float(np.max(norm_corr[35:min(246, len(norm_corr))]))
+            if pitch_peak < 0.22:
+                raise AudioQualityError(
+                    f"Non-vocal sound detected (Glottal Periodicity: {pitch_peak:.3f} < 0.22). "
+                    "Please produce a clear, sustained vowel sound like 'aaah'."
+                )
 
 
 def predict(
@@ -283,7 +299,6 @@ def predict(
 
     # --- Stage 1+2: Audio preprocessing + Feature extraction ---
     t0 = time.perf_counter()
-    logger.info("[inference] Starting prediction for audio: %s (variant=%s, use_llm=%s)", wav_path, model_variant, use_llm)
 
     # Capture raw waveform BEFORE any processing (fast single read)
     try:
@@ -299,12 +314,8 @@ def predict(
     if _y_raw.ndim > 1:
         _y_raw = np.mean(_y_raw, axis=1)
 
-    dur_s = len(_y_raw) / _sr_raw
-    logger.info("[inference] Stage 1: Loaded audio: duration=%.2fs, samples=%d", dur_s, len(_y_raw))
-
     # Validate audio quality to immediately reject random noise or silence
     validate_audio_quality(_y_raw, _sr_raw)
-    logger.info("[inference] Stage 1: Quality check passed (valid sustained phonation)")
 
     raw_waveform = _downsample(_y_raw)
 
@@ -313,25 +324,15 @@ def predict(
     sf.write(_raw_buf, _y_raw, 16_000, format='WAV', subtype='PCM_16')
     raw_audio_b64 = base64.b64encode(_raw_buf.getvalue()).decode('utf-8')
 
-    # --- Truncate to max 3.0s for feature extraction ---
-    # On Render Free Tier (0.1 vCPU), each librosa STFT pass scales with sample count.
-    # Truncating from 6-8s (100K+ samples) to 3s (48K samples) halves ALL downstream costs.
-    MAX_FEAT_SAMPLES = int(3.0 * _sr_raw)
-    if len(_y_raw) > MAX_FEAT_SAMPLES:
-        # Use the central stable segment for best feature accuracy
-        mid = len(_y_raw) // 2
-        half = MAX_FEAT_SAMPLES // 2
-        _y_feat = _y_raw[mid - half : mid + half]
-        logger.info("[inference] Stage 1: Truncated %d → %d samples (3.0s) for feature extraction", len(_y_raw), len(_y_feat))
+    all_feats = extract_all_features(wav_path, y=_y_raw, sr=_sr_raw)
+
+    # Capture preprocessed waveform (reuse array without reloading from disk)
+    import librosa as _librosa
+    _y_proc, _ = _librosa.effects.trim(_y_raw, top_db=20)
+    if len(_y_proc) > 0:
+        _y_proc = _y_proc / (np.max(np.abs(_y_proc)) + 1e-8)
     else:
-        _y_feat = _y_raw
-
-    t_feat_start = time.perf_counter()
-    all_feats = extract_all_features(wav_path, y=_y_feat, sr=_sr_raw)
-    logger.info("[inference] Stage 2: Feature extraction completed in %.1f ms", (time.perf_counter() - t_feat_start) * 1000)
-
-    # Preprocessed waveform — simple numpy normalization (no librosa.effects.trim STFT)
-    _y_proc = _y_feat / (np.max(np.abs(_y_feat)) + 1e-8)
+        _y_proc = _y_raw
     preprocessed_waveform = _downsample(_y_proc)
 
     # Encode preprocessed audio as base64 WAV for client-side playback
@@ -361,20 +362,17 @@ def predict(
         model = _classical_fp32
         model_variant = "classical_fp32 (fallback)"
 
-    t_infer_start = time.perf_counter()
     model.eval()
     with torch.no_grad():
         prob = float(model(x_tensor).squeeze())
 
-    inference_latency_ms = (time.perf_counter() - t_infer_start) * 1000
-    logger.info("[inference] Stage 5: %s inference completed in %.1f ms | raw_prob=%.4f", model_variant, inference_latency_ms, prob)
-
     # --- Stage 6: Post-processing → risk level ---
     risk_level, rule_recommendation = _interpret(prob)
 
+    inference_latency_ms = (time.perf_counter() - t0) * 1000
+
     # --- Stage 7: LLM recommendation ---
     if use_llm:
-        t_llm_start = time.perf_counter()
         llm_rec = generate_llm_recommendation(
             probability=prob,
             risk_level=risk_level,
@@ -382,12 +380,10 @@ def predict(
             model_used=model_variant,
             patient_name=patient_name,
         )
-        logger.info("[inference] Stage 7: LLM finished in %.1f ms", (time.perf_counter() - t_llm_start) * 1000)
     else:
         llm_rec = rule_recommendation
 
     total_latency_ms = (time.perf_counter() - t0) * 1000
-    logger.info("[inference] Pipeline complete in %.1f ms | risk=%s", total_latency_ms, risk_level)
 
     return {
         "probability":              round(prob, 4),

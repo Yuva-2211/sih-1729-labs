@@ -150,51 +150,34 @@ def generate_llm_recommendation(
     try:
         from groq import Groq
 
-        # Add strict timeout (3.5s) and max_retries (1) so LLM never stalls mobile response
-        client = Groq(api_key=api_key, timeout=3.5, max_retries=1)
+        client = Groq(api_key=api_key)
 
         prompt = _build_prompt(probability, risk_level, selected_features, model_used, patient_name=patient_name)
 
-        # Use fast, robust Groq models: llama-3.1-8b-instant provides sub-second clinical summaries
-        try:
-            model_name = "llama-3.1-8b-instant"
-            response = client.chat.completions.create(
-                model=model_name,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are a concise, compassionate clinical assistant "
-                            "helping patients understand a non-diagnostic voice screening result. "
-                            "Always remind users to consult a neurologist."
-                        ),
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=0.3,
-                max_tokens=250,
-            )
-        except Exception:
-            # Fallback to llama-3.3-70b-versatile if 8b is unavailable
-            response = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a concise clinical voice screening assistant. Remind users to consult a neurologist.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=0.3,
-                max_tokens=250,
-            )
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",   # current Groq production model
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a concise, compassionate clinical assistant "
+                        "helping patients understand a non-diagnostic voice screening result. "
+                        "Always remind users to consult a neurologist."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.4,       # keep it factual, not creative
+            max_tokens=350,
+            top_p=0.9,
+        )
 
         recommendation = response.choices[0].message.content.strip()
         logger.info("LLM recommendation generated (%d chars).", len(recommendation))
         return recommendation
 
     except Exception as exc:
-        logger.warning("Groq LLM call timed out or failed: %s — using rule fallback.", exc)
+        logger.warning("Groq LLM call failed: %s — using fallback.", exc)
         return _fallback_recommendation(probability, risk_level, patient_name=patient_name)
 
 

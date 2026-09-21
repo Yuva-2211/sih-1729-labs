@@ -19,38 +19,19 @@ SAMPLE_RATE = 16_000
 
 
 def extract_librosa_features(y: np.ndarray, sr: int) -> dict:
-    """MFCCs, F0, ZCR, spectral features — classical acoustic features.
-
-    Uses hop_length=1024 throughout to reduce STFT frame count ~4x vs default (512).
-    Critical for Render Free Tier 0.1 vCPU performance.
-    """
-    HOP = 1024
-    mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=N_MFCC, hop_length=HOP)
+    """MFCCs, F0, ZCR, spectral features — classical acoustic features."""
+    mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=N_MFCC)
     mfcc_mean = mfcc.mean(axis=1)
     mfcc_std = mfcc.std(axis=1)
 
-    # Optimize F0 extraction: use the central stable phonation segment (up to 3.0s)
-    # and hop_length=1024 for 10x-15x faster pitch tracking without sacrificing mean F0 accuracy
-    if len(y) > sr * 3:
-        mid = len(y) // 2
-        half_win = int(sr * 1.5)
-        y_pitch = y[mid - half_win : mid + half_win]
-    else:
-        y_pitch = y
+    f0 = librosa.yin(y, fmin=50, fmax=500, sr=sr, hop_length=512)
+    f0 = f0[~np.isnan(f0)]
+    f0_mean = float(np.mean(f0)) if len(f0) else 0.0
+    f0_std = float(np.std(f0)) if len(f0) else 0.0
 
-    try:
-        f0 = librosa.yin(y_pitch, fmin=60, fmax=450, sr=sr, hop_length=HOP)
-        f0 = f0[~np.isnan(f0)]
-        f0_mean = float(np.mean(f0)) if len(f0) else 0.0
-        f0_std = float(np.std(f0)) if len(f0) else 0.0
-    except Exception:
-        f0_mean = 0.0
-        f0_std = 0.0
-
-
-    zcr = float(librosa.feature.zero_crossing_rate(y, hop_length=HOP).mean())
-    spec_centroid = float(librosa.feature.spectral_centroid(y=y, sr=sr, hop_length=HOP).mean())
-    spec_rolloff = float(librosa.feature.spectral_rolloff(y=y, sr=sr, hop_length=HOP).mean())
+    zcr = float(librosa.feature.zero_crossing_rate(y).mean())
+    spec_centroid = float(librosa.feature.spectral_centroid(y=y, sr=sr).mean())
+    spec_rolloff = float(librosa.feature.spectral_rolloff(y=y, sr=sr).mean())
 
     feats: dict = {}
     for i, v in enumerate(mfcc_mean):
@@ -135,11 +116,9 @@ def extract_all_features(
             y, sr = librosa.load(wav_path, sr=SAMPLE_RATE, mono=True)
     if y.ndim > 1:
         y = np.mean(y, axis=1)
-    # Normalize amplitude — skip the expensive librosa.effects.trim STFT pass.
-    # Audio is already truncated to a stable 3s segment by the caller.
-    peak = float(np.max(np.abs(y)))
-    if peak > 1e-8:
-        y_norm = y / peak
+    y_trimmed, _ = librosa.effects.trim(y, top_db=20)
+    if len(y_trimmed) > 0:
+        y_norm = y_trimmed / (np.max(np.abs(y_trimmed)) + 1e-8)
     else:
         y_norm = y
 

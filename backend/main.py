@@ -24,7 +24,6 @@ from typing import Literal, Optional
 import numpy as np
 import torch
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
-from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -168,11 +167,10 @@ class HealthResponse(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
-async def _save_upload_to_temp(upload: UploadFile) -> str:
+def _save_upload_to_temp(upload: UploadFile) -> str:
     """Persist the uploaded file to a temp path and return the path string.
 
     Fix #3: Validates extension against ALLOWED_AUDIO_EXTENSIONS before saving.
-    Uses non-blocking async read to prevent threadpool I/O deadlocks.
     """
     suffix = Path(upload.filename or "audio.wav").suffix.lower() or ".wav"
     if suffix not in ALLOWED_AUDIO_EXTENSIONS:
@@ -185,43 +183,15 @@ async def _save_upload_to_temp(upload: UploadFile) -> str:
         )
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
     try:
-        content = await upload.read()
-        if not content:
-            raise HTTPException(status_code=422, detail="Empty audio recording received.")
-        tmp.write(content)
-        tmp.flush()
+        shutil.copyfileobj(upload.file, tmp)
     finally:
         tmp.close()
     return tmp.name
 
 
-
 # ---------------------------------------------------------------------------
 # Routes — System
 # ---------------------------------------------------------------------------
-
-@app.get(
-    "/",
-    tags=["System"],
-    summary="Root status and API discovery",
-)
-@app.head("/", include_in_schema=False)
-async def root():
-    """Root endpoint providing service status and links to documentation and probes."""
-    return {
-        "service": "NeuroVoice — Parkinson's Disease Screening API",
-        "status": "operational",
-        "version": app.version,
-        "problem_statement": "SIH26139",
-        "endpoints": {
-            "docs": "/docs",
-            "health": "/api/v1/health",
-            "models": "/api/v1/models",
-            "predict_audio": "/api/v1/predict",
-            "predict_features": "/api/v1/predict/features",
-        },
-    }
-
 
 @app.get(
     "/api/v1/health",
@@ -261,7 +231,7 @@ async def list_models():
     tags=["Prediction"],
     summary="Predict PD risk from raw audio",
 )
-async def predict_audio(
+def predict_audio(
     file: UploadFile = File(
         ...,
         description=(
@@ -303,42 +273,29 @@ async def predict_audio(
     **Latency (approx.)**: 200–800 ms classical · 2–8 s hybrid (CPU quantum simulator)
     """
     request_id = str(uuid.uuid4())
-    logger.info("==> [predict_audio] Started: filename=%s, variant=%s, use_llm=%s, patient=%s",
-                file.filename, model_variant, use_llm, patient_name)
-    t0 = time.perf_counter()
     tmp_path: Optional[str] = None
 
     try:
-        tmp_path = await _save_upload_to_temp(file)
-        result = await run_in_threadpool(
-            inference.predict,
+        tmp_path = _save_upload_to_temp(file)  # raises HTTPException on bad extension
+        result = inference.predict(
             tmp_path,
             model_variant=model_variant,
             use_llm=use_llm,
             patient_name=patient_name,
         )
-        total_time_ms = (time.perf_counter() - t0) * 1000
-        logger.info("<== [predict_audio] Done [%s]: %.1f ms | risk=%s (prob=%.4f, model=%s)",
-                    request_id, total_time_ms, result.get("risk_level"),
-                    result.get("probability", 0.0), result.get("model_used"))
         return PredictionResponse(request_id=request_id, **result)
     except HTTPException:
         raise  # re-raise our own HTTP exceptions unchanged
     except ValueError as exc:
-        logger.warning("[predict_audio] Validation failed [%s]: %s", request_id, exc)
         raise HTTPException(status_code=422, detail=str(exc))
     except FileNotFoundError as exc:
-        logger.error("[predict_audio] Model missing [%s]: %s", request_id, exc)
         raise HTTPException(status_code=500, detail=f"Model artifact missing: {exc}")
     except Exception as exc:
         logger.exception("predict_audio failed [%s]", request_id)
         raise HTTPException(status_code=500, detail=f"Inference error: {exc}")
     finally:
         if tmp_path and os.path.exists(tmp_path):
-            try:
-                os.remove(tmp_path)
-            except OSError:
-                pass
+            os.remove(tmp_path)
 
 
 @app.post(

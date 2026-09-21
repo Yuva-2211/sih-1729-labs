@@ -14,6 +14,7 @@ numpy>=1.24.0
 
 # Quantum (Hybrid VQC Model)
 pennylane==0.42.0
+autoray>=0.6.11,<0.8.0
 
 # Praat features (Jitter, Shimmer, HNR dysphonia biomarkers)
 praat-parselmouth>=0.4.3

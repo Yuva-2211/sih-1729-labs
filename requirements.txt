@@ -12,5 +12,7 @@ numpy>=1.24.0
 gradio>=4.20.0
 spaces
 pennylane==0.42.0
+autoray>=0.6.11,<0.8.0
 praat-parselmouth>=0.4.3
+
 

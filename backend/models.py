@@ -32,10 +32,19 @@ class ClassicalModel(nn.Module):
 # Hybrid Quantum-Classical Model (VQC with PennyLane)
 # ---------------------------------------------------------------------------
 
+def is_pennylane_available() -> bool:
+    """Check if PennyLane is installed and importable."""
+    try:
+        import pennylane
+        return True
+    except ImportError:
+        return False
+
+
 def build_hybrid_model(n_features: int = N_QUBITS, n_qubits: int = N_QUBITS, n_layers: int = N_LAYERS):
     """
     Build the Hybrid Quantum-Classical model using PennyLane.
-    Falls back to a classical-only model if PennyLane is not available.
+    Returns None if PennyLane is not available.
     """
     try:
         import pennylane as qml
@@ -49,7 +58,6 @@ def build_hybrid_model(n_features: int = N_QUBITS, n_qubits: int = N_QUBITS, n_l
             return [qml.expval(qml.PauliZ(i)) for i in range(n_qubits)]
 
         weight_shapes = {"weights": (n_layers, n_qubits)}
-        quantum_layer = qml.qnn.TorchLayer(quantum_circuit, weight_shapes)
 
         class HybridQuantumModel(nn.Module):
             """Classical pre-processing -> angle encoding -> quantum circuit -> classical post-processing."""
@@ -57,7 +65,7 @@ def build_hybrid_model(n_features: int = N_QUBITS, n_qubits: int = N_QUBITS, n_l
             def __init__(self):
                 super().__init__()
                 self.pre = nn.Sequential(nn.Linear(n_features, n_qubits), nn.Tanh())
-                self.quantum = quantum_layer
+                self.quantum = qml.qnn.TorchLayer(quantum_circuit, weight_shapes)
                 self.post = nn.Sequential(nn.Linear(n_qubits, 16), nn.ReLU(), nn.Linear(16, 1))
 
             def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -69,9 +77,9 @@ def build_hybrid_model(n_features: int = N_QUBITS, n_qubits: int = N_QUBITS, n_l
         return HybridQuantumModel()
 
     except ImportError:
-        # Graceful degradation: return classical model when PennyLane is absent.
         import logging
         logging.getLogger(__name__).warning(
-            "PennyLane not installed — falling back to ClassicalModel for the hybrid slot."
+            "PennyLane not installed — cannot instantiate HybridQuantumModel."
         )
-        return ClassicalModel(n_features)
+        return None
+

@@ -110,11 +110,14 @@ def _load_models():
     # --- Hybrid FP32 ---
     try:
         _hybrid_fp32 = build_hybrid_model()
-        _hybrid_fp32.load_state_dict(
-            torch.load(MODEL_DIR / "hybrid_quantum_fp32.pt", map_location="cpu", weights_only=True)
-        )
-        _hybrid_fp32.eval()
-        logger.info("Hybrid FP32 model loaded successfully.")
+        if _hybrid_fp32 is not None:
+            _hybrid_fp32.load_state_dict(
+                torch.load(MODEL_DIR / "hybrid_quantum_fp32.pt", map_location="cpu", weights_only=True)
+            )
+            _hybrid_fp32.eval()
+            logger.info("Hybrid FP32 model loaded successfully.")
+        else:
+            logger.warning("Hybrid FP32 model skipped: PennyLane is not available.")
     except Exception as exc:
         logger.warning("Could not load hybrid FP32 model: %s", exc)
         _hybrid_fp32 = None
@@ -132,19 +135,23 @@ def _load_models():
             torch.backends.quantized.engine = engines[0]
 
         _hybrid_int8 = build_hybrid_model()
-        _hybrid_int8 = torch.quantization.quantize_dynamic(
-            _hybrid_int8, {torch.nn.Linear}, dtype=torch.qint8
-        )
-        _hybrid_int8.load_state_dict(
-            torch.load(MODEL_DIR / "hybrid_quantum_quantized.pt", map_location="cpu", weights_only=True)
-        )
-        _hybrid_int8.eval()
-        logger.info("Hybrid INT8 model loaded successfully.")
+        if _hybrid_int8 is not None:
+            _hybrid_int8 = torch.quantization.quantize_dynamic(
+                _hybrid_int8, {torch.nn.Linear}, dtype=torch.qint8
+            )
+            _hybrid_int8.load_state_dict(
+                torch.load(MODEL_DIR / "hybrid_quantum_quantized.pt", map_location="cpu", weights_only=True)
+            )
+            _hybrid_int8.eval()
+            logger.info("Hybrid INT8 model loaded successfully.")
+        else:
+            logger.warning("Hybrid INT8 model skipped: PennyLane is not available.")
     except Exception as exc:
         logger.warning("Could not load hybrid INT8 model: %s", exc)
         _hybrid_int8 = None
 
     logger.info("All models loaded.")
+
 
 
 def get_models_status() -> dict:

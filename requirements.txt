@@ -11,3 +11,6 @@ soundfile>=0.12.1
 numpy>=1.24.0
 gradio>=4.20.0
 spaces
+pennylane==0.42.0
+praat-parselmouth>=0.4.3
+

@@ -12,9 +12,10 @@ librosa>=0.10.0
 soundfile>=0.12.1              # used by librosa for some formats
 numpy>=1.24.0
 
-# Quantum (optional — hybrid model falls back to classical if absent)
-# pennylane>=0.35.0
+# Quantum (Hybrid VQC Model)
+pennylane==0.42.0
 
-# Praat features (optional — falls back to zeros if absent)
-# praat-parselmouth>=0.4.3
+# Praat features (Jitter, Shimmer, HNR dysphonia biomarkers)
+praat-parselmouth>=0.4.3
+
 

@@ -30,7 +30,7 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  Future<void> _checkBackendHealth() async {
+  Future<void> _checkBackendHealth({bool showToast = false}) async {
     if (!mounted) return;
     setState(() => _checkingHealth = true);
     final status = await NeuralVoiceApi().getModelsStatus();
@@ -40,224 +40,37 @@ class _HomeScreenState extends State<HomeScreen> {
         _modelsStatus = status;
         _backendOnline = status != null;
       });
-    }
-  }
-
-  void _showServerConfigSheet() {
-    final controller = TextEditingController(text: ApiConfig.baseUrl);
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setSheetState) {
-          return Container(
-            padding: EdgeInsets.only(
-              left: 24,
-              right: 24,
-              top: 24,
-              bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-            ),
-            decoration: const BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
+      if (showToast) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
               children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: AppColors.outlineVariant,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
+                Icon(
+                  _backendOnline ? Icons.check_circle_rounded : Icons.error_outline_rounded,
+                  color: Colors.white,
+                  size: 20,
                 ),
-                const SizedBox(height: 18),
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: (_backendOnline ? Colors.green : Colors.red)
-                            .withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(
-                        _backendOnline
-                            ? Icons.cloud_done_rounded
-                            : Icons.cloud_off_rounded,
-                        color: _backendOnline ? Colors.green : Colors.red,
-                        size: 24,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Backend Connection',
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
-                        ),
-                        Text(
-                          _backendOnline ? 'Connected & Ready' : 'Offline / Unreachable',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: _backendOnline ? Colors.green : Colors.red,
-                                fontWeight: FontWeight.w600,
-                              ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
+                const SizedBox(width: 10),
                 Text(
-                  'Active Server URL',
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: AppColors.onSurfaceVariant,
-                        fontWeight: FontWeight.w600,
-                      ),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: controller,
-                  decoration: InputDecoration(
-                    hintText: 'http://127.0.0.1:8000',
-                    filled: true,
-                    fillColor: AppColors.surfaceContainerLow,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide.none,
-                    ),
-                    prefixIcon: const Icon(Icons.link_rounded, size: 20),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    ActionChip(
-                      label: const Text('Render Cloud'),
-                      avatar: const Icon(Icons.cloud_rounded, size: 16),
-                      onPressed: () {
-                        controller.text = 'https://sih-1729-labs.onrender.com';
-                      },
-                    ),
-                    ActionChip(
-                      label: const Text('USB (127.0.0.1)'),
-                      avatar: const Icon(Icons.usb_rounded, size: 16),
-                      onPressed: () {
-                        controller.text = 'http://127.0.0.1:8000';
-                      },
-                    ),
-                    ActionChip(
-                      label: const Text('Wi-Fi (10.233.29.227)'),
-                      avatar: const Icon(Icons.wifi_rounded, size: 16),
-                      onPressed: () {
-                        controller.text = 'http://10.233.29.227:8000';
-                      },
-                    ),
-                    ActionChip(
-                      label: const Text('Emulator (10.0.2.2)'),
-                      avatar: const Icon(Icons.phone_android_rounded, size: 16),
-                      onPressed: () {
-                        controller.text = 'http://10.0.2.2:8000';
-                      },
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceContainerLow,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(Icons.info_outline, size: 16, color: AppColors.primary),
-                          const SizedBox(width: 6),
-                          Text(
-                            'Quick Setup Notes',
-                            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  color: AppColors.primary,
-                                ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        '• USB: Run "adb reverse tcp:8000 tcp:8000" in terminal.\n'
-                        '• Wi-Fi: Connect phone to same Wi-Fi as PC & start backend with --host 0.0.0.0.',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: AppColors.onSurfaceVariant,
-                              fontSize: 12,
-                            ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                    icon: _checkingHealth
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Icon(Icons.refresh_rounded),
-                    label: Text(_checkingHealth ? 'Testing...' : 'Save & Test Connection'),
-                    onPressed: _checkingHealth
-                        ? null
-                        : () async {
-                            final input = controller.text.trim();
-                            if (input.isNotEmpty) {
-                              ApiConfig.setBaseUrl(input);
-                            }
-                            setSheetState(() {});
-                            await _checkBackendHealth();
-                            setSheetState(() {});
-                            if (context.mounted && _backendOnline) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Connected to backend successfully!'),
-                                  backgroundColor: Colors.green,
-                                ),
-                              );
-                              Navigator.pop(context);
-                            }
-                          },
+                  _backendOnline ? 'Backend Connected' : 'Backend Not Connected',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
             ),
-          );
-        },
-      ),
-    );
+            backgroundColor: _backendOnline
+                ? const Color(0xFF22C55E)
+                : const Color(0xFFEF4444),
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -306,33 +119,43 @@ class _HomeScreenState extends State<HomeScreen> {
                 Padding(
                   padding: const EdgeInsets.only(right: 18.0),
                   child: Center(
-                    child: InkWell(
-                      onTap: _showServerConfigSheet,
-                      borderRadius: BorderRadius.circular(12),
-                      child: Padding(
-                        padding: const EdgeInsets.all(8.0),
-                        child: Container(
-                          width: 8,
-                          height: 8,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: _checkingHealth
-                                ? Colors.amber
-                                : _backendOnline
-                                    ? const Color(0xFF22C55E)
-                                    : const Color(0xFFEF4444),
-                            boxShadow: [
-                              BoxShadow(
-                                color: (_checkingHealth
-                                        ? Colors.amber
-                                        : _backendOnline
-                                            ? const Color(0xFF22C55E)
-                                            : const Color(0xFFEF4444))
-                                    .withValues(alpha: 0.5),
-                                blurRadius: 4,
-                                spreadRadius: 1,
-                              ),
-                            ],
+                    child: Tooltip(
+                      message: _checkingHealth
+                          ? 'Connecting to backend...'
+                          : _backendOnline
+                              ? 'Backend Connected'
+                              : 'Backend Not Connected (tap to re-test)',
+                      child: InkWell(
+                        onTap: _checkingHealth
+                            ? null
+                            : () => _checkBackendHealth(showToast: true),
+                        borderRadius: BorderRadius.circular(12),
+                        child: Padding(
+                          padding: const EdgeInsets.all(8.0),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 300),
+                            width: 10,
+                            height: 10,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: _checkingHealth
+                                  ? const Color(0xFFF59E0B) // Yellow / Amber while connecting
+                                  : _backendOnline
+                                      ? const Color(0xFF22C55E) // Green when connected
+                                      : const Color(0xFFEF4444), // Red when not connected
+                              boxShadow: [
+                                BoxShadow(
+                                  color: (_checkingHealth
+                                          ? const Color(0xFFF59E0B)
+                                          : _backendOnline
+                                              ? const Color(0xFF22C55E)
+                                              : const Color(0xFFEF4444))
+                                      .withValues(alpha: 0.6),
+                                  blurRadius: 6,
+                                  spreadRadius: 1.5,
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),

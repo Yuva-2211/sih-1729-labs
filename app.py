@@ -13,8 +13,10 @@ try:
 except ImportError:
     class spaces:
         @staticmethod
-        def GPU(fn):
-            return fn
+        def GPU(fn=None, duration=60):
+            def decorator(f):
+                return f
+            return decorator if fn is None else fn
 
 from backend.main import app
 import inference
@@ -52,13 +54,8 @@ with gr.Blocks(title="NeuroVoice API") as demo:
     gr.Markdown("- **Health Status**: [Check /api/v1/health](/api/v1/health)")
     gr.Markdown("- **Active Models**: [View /api/v1/models](/api/v1/models)")
 
-# Mount Gradio onto the existing FastAPI app at /gradio
-app = gr.mount_gradio_app(app, demo, path="/gradio")
-
-@app.get("/")
-def root_redirect():
-    from fastapi.responses import RedirectResponse
-    return RedirectResponse(url="/gradio")
+# Mount Gradio onto the existing FastAPI app at root /
+app = gr.mount_gradio_app(app, demo, path="/")
 
 if __name__ == "__main__":
     import uvicorn

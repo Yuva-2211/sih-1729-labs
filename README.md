@@ -1,12 +1,3 @@
----
-title: SIH 1729 Nv
-emoji: 🧠
-colorFrom: blue
-colorTo: indigo
-sdk: gradio
-app_file: app.py
-pinned: false
----
 
 # NeuroVoice (SIH-1729 / SIH-26139)
 ### AI-Powered Parkinson's Disease Screening via Vocal Biomarkers & Hybrid Quantum-Classical Machine Learning

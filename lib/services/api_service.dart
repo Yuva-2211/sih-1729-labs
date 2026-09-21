@@ -15,18 +15,27 @@ class ApiConfig {
     _resolvedBaseUrl = url.endsWith('/') ? url.substring(0, url.length - 1) : url;
   }
 
-  /// Candidate URLs to probe for local development
+  /// Candidate URLs to probe - cloud deployment prioritized
   static List<String> get candidateUrls {
-    if (kIsWeb) return const ['http://127.0.0.1:8000'];
-    if (Platform.isAndroid) {
+    if (kIsWeb) {
       return const [
-        'http://127.0.0.1:8000',      // Physical device (with adb reverse)
-        'http://localhost:8000',      // Alternative localhost
-        'http://10.0.2.2:8000',        // Android Emulator
-        'http://10.233.29.227:8000',   // Current Wi-Fi network IP
+        'https://sih-1729-labs.onrender.com',
+        'http://127.0.0.1:8000',
       ];
     }
-    return const ['http://127.0.0.1:8000'];
+    if (Platform.isAndroid) {
+      return const [
+        'https://sih-1729-labs.onrender.com', // Live Render Cloud Backend
+        'http://127.0.0.1:8000',               // Physical device (with adb reverse)
+        'http://localhost:8000',               // Alternative localhost
+        'http://10.0.2.2:8000',                 // Android Emulator
+        'http://10.233.29.227:8000',            // Local Wi-Fi network IP
+      ];
+    }
+    return const [
+      'https://sih-1729-labs.onrender.com',
+      'http://127.0.0.1:8000',
+    ];
   }
 
   /// Dynamically resolves default backend host based on execution platform.

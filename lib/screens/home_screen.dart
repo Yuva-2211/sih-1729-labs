@@ -8,7 +8,6 @@ import 'model_evolution_detail_screen.dart';
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
-
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
@@ -30,7 +29,7 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  Future<void> _checkBackendHealth({bool showToast = false}) async {
+  Future<void> _checkBackendHealth() async {
     if (!mounted) return;
     setState(() => _checkingHealth = true);
     final status = await NeuralVoiceApi().getModelsStatus();
@@ -40,36 +39,6 @@ class _HomeScreenState extends State<HomeScreen> {
         _modelsStatus = status;
         _backendOnline = status != null;
       });
-      if (showToast) {
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                Icon(
-                  _backendOnline ? Icons.check_circle_rounded : Icons.error_outline_rounded,
-                  color: Colors.white,
-                  size: 20,
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  _backendOnline ? 'Backend Connected' : 'Backend Not Connected',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-            backgroundColor: _backendOnline
-                ? const Color(0xFF22C55E)
-                : const Color(0xFFEF4444),
-            duration: const Duration(seconds: 2),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          ),
-        );
-      }
     }
   }
 
@@ -126,9 +95,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               ? 'Backend Connected'
                               : 'Backend Not Connected (tap to re-test)',
                       child: InkWell(
-                        onTap: _checkingHealth
-                            ? null
-                            : () => _checkBackendHealth(showToast: true),
+                        onTap: _checkingHealth ? null : _checkBackendHealth,
                         borderRadius: BorderRadius.circular(12),
                         child: Padding(
                           padding: const EdgeInsets.all(8.0),

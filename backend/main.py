@@ -296,6 +296,9 @@ def predict_audio(
     **Latency (approx.)**: 200–800 ms classical · 2–8 s hybrid (CPU quantum simulator)
     """
     request_id = str(uuid.uuid4())
+    logger.info("==> [predict_audio] Started: filename=%s, variant=%s, use_llm=%s, patient=%s",
+                file.filename, model_variant, use_llm, patient_name)
+    t0 = time.perf_counter()
     tmp_path: Optional[str] = None
 
     try:
@@ -306,12 +309,18 @@ def predict_audio(
             use_llm=use_llm,
             patient_name=patient_name,
         )
+        total_time_ms = (time.perf_counter() - t0) * 1000
+        logger.info("<== [predict_audio] Done [%s]: %.1f ms | risk=%s (prob=%.4f, model=%s)",
+                    request_id, total_time_ms, result.get("risk_level"),
+                    result.get("probability", 0.0), result.get("model_used"))
         return PredictionResponse(request_id=request_id, **result)
     except HTTPException:
         raise  # re-raise our own HTTP exceptions unchanged
     except ValueError as exc:
+        logger.warning("[predict_audio] Validation failed [%s]: %s", request_id, exc)
         raise HTTPException(status_code=422, detail=str(exc))
     except FileNotFoundError as exc:
+        logger.error("[predict_audio] Model missing [%s]: %s", request_id, exc)
         raise HTTPException(status_code=500, detail=f"Model artifact missing: {exc}")
     except Exception as exc:
         logger.exception("predict_audio failed [%s]", request_id)

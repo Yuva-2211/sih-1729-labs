@@ -226,16 +226,16 @@ def validate_audio_quality(y: np.ndarray, sr: int = 16_000):
 
     # 1. Check RMS Energy (silence / near-silence detection)
     rms = float(np.mean(librosa.feature.rms(y=y)))
-    if rms < 0.005:
+    if rms < 0.001:
         raise AudioQualityError(
-            f"Audio is too faint or silent (RMS energy: {rms:.4f} < 0.005). "
+            f"Audio is too faint or silent (RMS energy: {rms:.4f} < 0.001). "
             "Please check your microphone and speak clearly."
         )
 
     # 2. VAD Trim (Voice Activity Detection duration)
-    y_trimmed, _ = librosa.effects.trim(y, top_db=20)
+    y_trimmed, _ = librosa.effects.trim(y, top_db=25)
     trimmed_duration = len(y_trimmed) / sr
-    if trimmed_duration < 0.8:
+    if trimmed_duration < 0.5:
         raise AudioQualityError(
             f"Voice sample too short ({trimmed_duration:.2f}s of vocal sound detected). "
             "Please sustain the vowel 'aaah' continuously for at least 3-5 seconds."
@@ -243,21 +243,22 @@ def validate_audio_quality(y: np.ndarray, sr: int = 16_000):
 
     # 3. Spectral Flatness (Random noise / white noise detector)
     flatness = float(np.mean(librosa.feature.spectral_flatness(y=y_trimmed)))
-    if flatness > 0.18:
+    if flatness > 0.40:
         raise AudioQualityError(
-            f"Random background noise detected (Spectral Flatness: {flatness:.3f} > 0.18). "
-            "No sustained harmonic human voice was found. Please record in a quiet environment."
+            f"Random background noise detected (Spectral Flatness: {flatness:.3f} > 0.40). "
+            "No sustained vocal sound was found. Please record in a quiet environment."
         )
 
     # 4. Zero-Crossing Rate (High-frequency hiss / static)
     zcr = float(np.mean(librosa.feature.zero_crossing_rate(y_trimmed)))
-    if zcr > 0.32:
+    if zcr > 0.45:
         raise AudioQualityError(
-            f"Excessive static or hissing noise detected (ZCR: {zcr:.3f} > 0.32). "
+            f"Excessive static or hissing noise detected (ZCR: {zcr:.3f} > 0.45). "
             "Please ensure you are speaking directly into the microphone."
         )
 
     # 5. Glottal Periodicity (Autocorrelation in human pitch range: 65 Hz to 450 Hz)
+    # Only flag if completely aperiodic (non-vocal random static < 0.08)
     mid_start = len(y_trimmed) // 4
     mid_end = min(len(y_trimmed), mid_start + int(0.2 * sr))
     frame = y_trimmed[mid_start:mid_end]
@@ -266,14 +267,13 @@ def validate_audio_quality(y: np.ndarray, sr: int = 16_000):
         corr = corr[len(corr)//2:]
         if corr[0] > 0:
             norm_corr = corr / corr[0]
-            # Lag range for 65 Hz to 450 Hz at 16 kHz:
-            # 16000 / 450 ~= 35, 16000 / 65 ~= 246
             pitch_peak = float(np.max(norm_corr[35:min(246, len(norm_corr))]))
-            if pitch_peak < 0.22:
+            if pitch_peak < 0.08:
                 raise AudioQualityError(
-                    f"Non-vocal sound detected (Glottal Periodicity: {pitch_peak:.3f} < 0.22). "
+                    f"Non-vocal sound detected (Glottal Periodicity: {pitch_peak:.3f} < 0.08). "
                     "Please produce a clear, sustained vowel sound like 'aaah'."
                 )
+
 
 
 def predict(

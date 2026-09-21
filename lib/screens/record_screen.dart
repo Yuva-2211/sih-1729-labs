@@ -1,15 +1,16 @@
 import 'dart:async';
 import 'dart:math';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_sound/flutter_sound.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import '../theme/app_theme.dart';
+import '../widgets/v2_model_selector.dart';
 
 class RecordScreen extends StatefulWidget {
-  const RecordScreen({Key? key}) : super(key: key);
+  const RecordScreen({super.key});
+
 
   @override
   State<RecordScreen> createState() => _RecordScreenState();
@@ -30,6 +31,9 @@ class _RecordScreenState extends State<RecordScreen>
   Timer? _waveformTimer;
   final Random random = Random();
   late List<double> waveformHeights;
+
+  // ---- Participant Name ---------------------------------------------------
+  final TextEditingController _nameController = TextEditingController();
 
   // ---- Animations ---------------------------------------------------------
   late AnimationController _pulseController;
@@ -79,6 +83,7 @@ class _RecordScreenState extends State<RecordScreen>
     _waveformTimer?.cancel();
     _pulseController.dispose();
     _recorder.closeRecorder();
+    _nameController.dispose();
     super.dispose();
   }
 
@@ -160,12 +165,22 @@ class _RecordScreenState extends State<RecordScreen>
     }
   }
 
+  // ---- Model Variant Selection (Serving v2 Models) -----------------------
+  String _selectedModelVariant = V2ModelRegistry.activeModelId;
+  final bool _useLlm = true;
+
   void _proceed() {
     if (_recordedFilePath == null || !isComplete) return;
+    final patientName = _nameController.text.trim().isEmpty ? 'Participant' : _nameController.text.trim();
     Navigator.pushNamed(
       context,
-      '/analysis',
-      arguments: {'filePath': _recordedFilePath},
+      '/pipeline',
+      arguments: {
+        'filePath': _recordedFilePath,
+        'modelVariant': _selectedModelVariant,
+        'useLlm': _useLlm,
+        'patientName': patientName,
+      },
     );
   }
 
@@ -208,170 +223,218 @@ class _RecordScreenState extends State<RecordScreen>
       ),
       body: Center(
         child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  'STEP 1 OF 3',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: AppColors.onSurfaceVariant,
-                    letterSpacing: 1.5,
-                  ),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                'STEP 1 OF 3',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: AppColors.onSurfaceVariant,
+                  letterSpacing: 1.5,
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  'Speak the sustained vowel /aaah/ for 5–10 seconds.',
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: AppColors.onSurfaceVariant,
-                  ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Speak the sustained vowel /aaah/ for 5–10 seconds.',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: AppColors.onSurfaceVariant,
                 ),
-                const SizedBox(height: 32),
+              ),
+              const SizedBox(height: 24),
 
-                Container(
-                  width: double.infinity,
-                  constraints: const BoxConstraints(maxWidth: 400),
-                  padding: const EdgeInsets.all(32),
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceContainerLowest,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                        color: AppColors.outlineVariant.withValues(alpha: 0.5)),
-                  ),
-                  child: Column(
-                    children: [
-                      // Timer display
-                      Text(
-                        timerText,
-                        style: theme.textTheme.displayLarge?.copyWith(
-                          color: isRecording
-                              ? AppColors.error
-                              : AppColors.onSurface,
-                          fontFeatures: [const FontFeature.tabularFigures()],
-                        ),
+              Container(
+                width: double.infinity,
+                constraints: const BoxConstraints(maxWidth: 450),
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceContainerLowest,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                      color: AppColors.outlineVariant.withValues(alpha: 0.5)),
+                ),
+                child: Column(
+                  children: [
+                    // Participant Name Input
+                    TextField(
+                      controller: _nameController,
+                      enabled: !isRecording,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.onSurface,
                       ),
-                      const SizedBox(height: 32),
+                      decoration: InputDecoration(
+                        labelText: 'Participant / Patient Name',
+                        hintText: 'e.g. Alex Kumar or Patient #01',
+                        labelStyle: theme.textTheme.bodySmall?.copyWith(
+                          color: AppColors.onSurfaceVariant,
+                        ),
+                        prefixIcon: const Icon(
+                          Icons.person_outline_rounded,
+                          size: 20,
+                          color: AppColors.primaryContainer,
+                        ),
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: AppColors.outlineVariant),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide(color: AppColors.outlineVariant.withValues(alpha: 0.7)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: AppColors.primaryContainer, width: 1.5),
+                        ),
+                        fillColor: AppColors.surface,
+                        filled: true,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
 
-                      // Mic button
-                      GestureDetector(
-                        onTap: _toggleRecording,
-                        child: ScaleTransition(
-                          scale: _pulseAnimation,
-                          child: Container(
-                            width: 128,
-                            height: 128,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
+                    // Timer display
+                    Text(
+                      timerText,
+                      style: theme.textTheme.displayLarge?.copyWith(
+                        color: isRecording
+                            ? AppColors.error
+                            : AppColors.onSurface,
+                        fontFeatures: [const FontFeature.tabularFigures()],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Mic button
+                    GestureDetector(
+                      onTap: _toggleRecording,
+                      child: ScaleTransition(
+                        scale: _pulseAnimation,
+                        child: Container(
+                          width: 112,
+                          height: 112,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: isRecording
+                                ? AppColors.primaryContainer
+                                    .withValues(alpha: 0.1)
+                                : AppColors.surfaceContainerLow,
+                            border: Border.all(
                               color: isRecording
                                   ? AppColors.primaryContainer
-                                      .withValues(alpha: 0.1)
-                                  : AppColors.surfaceContainerLow,
-                              border: Border.all(
-                                color: isRecording
-                                    ? AppColors.primaryContainer
-                                    : AppColors.outlineVariant,
-                                width: isRecording ? 2 : 1,
-                              ),
-                            ),
-                            child: Icon(
-                              isRecording ? Icons.stop_rounded : Icons.mic_rounded,
-                              size: 48,
-                              color: isRecording
-                                  ? AppColors.error
-                                  : AppColors.onSurfaceVariant,
+                                  : AppColors.outlineVariant,
+                              width: isRecording ? 2 : 1,
                             ),
                           ),
-                        ),
-                      ),
-                      const SizedBox(height: 32),
-
-                      // Waveform
-                      SizedBox(
-                        height: 40,
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: List.generate(10, (index) {
-                            return AnimatedContainer(
-                              duration: const Duration(milliseconds: 100),
-                              width: 4,
-                              height: waveformHeights[index],
-                              margin:
-                                  const EdgeInsets.symmetric(horizontal: 2),
-                              decoration: BoxDecoration(
-                                color: isRecording
-                                    ? AppColors.primaryContainer
-                                    : AppColors.outlineVariant,
-                                borderRadius: BorderRadius.circular(2),
-                              ),
-                            );
-                          }),
-                        ),
-                      ),
-                      const SizedBox(height: 32),
-
-                      // Status text
-                      Text(
-                        isComplete
-                            ? '✓ Recording complete (${seconds}s). Tap Next to analyse.'
-                            : isRecording
-                                ? 'Recording... say /aaah/ continuously.'
-                                : _recorderReady
-                                    ? 'Tap the mic to start recording.'
-                                    : 'Requesting microphone access...',
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: isComplete
-                              ? AppColors.primary
-                              : AppColors.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(height: 32),
-
-                      // Action button
-                      SizedBox(
-                        width: double.infinity,
-                        height: 48,
-                        child: ElevatedButton(
-                          onPressed: isComplete
-                              ? _proceed
-                              : (_recorderReady ? _toggleRecording : null),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: isRecording
-                                ? AppColors.surfaceContainerHighest
-                                : AppColors.primaryContainer,
-                            foregroundColor: isRecording
+                          child: Icon(
+                            isRecording ? Icons.stop_rounded : Icons.mic_rounded,
+                            size: 44,
+                            color: isRecording
                                 ? AppColors.error
-                                : AppColors.onPrimary,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            elevation: 0,
-                          ),
-                          child: Text(
-                            isComplete
-                                ? 'Next — Analyse voice'
-                                : isRecording
-                                    ? 'Stop recording'
-                                    : 'Start recording',
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color:
-                                  isRecording ? AppColors.error : AppColors.onPrimary,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 14,
-                            ),
+                                : AppColors.onSurfaceVariant,
                           ),
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Waveform
+                    SizedBox(
+                      height: 36,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: List.generate(10, (index) {
+                          return AnimatedContainer(
+                            duration: const Duration(milliseconds: 100),
+                            width: 4,
+                            height: waveformHeights[index],
+                            margin:
+                                const EdgeInsets.symmetric(horizontal: 2),
+                            decoration: BoxDecoration(
+                              color: isRecording
+                                  ? AppColors.primaryContainer
+                                  : AppColors.outlineVariant,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          );
+                        }),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    // Status text
+                    Text(
+                      isComplete
+                          ? '✓ Recording complete (${seconds}s). Select model and proceed.'
+                          : isRecording
+                              ? 'Recording... say /aaah/ continuously.'
+                              : _recorderReady
+                                  ? 'Tap the mic to start recording.'
+                                  : 'Requesting microphone access...',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: isComplete
+                            ? AppColors.primary
+                            : AppColors.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Gemini-Style Serving Model Selector
+                    V2ModelSelectorCard(
+                      selectedModelId: _selectedModelVariant,
+                      enabled: !isRecording,
+                      onSelected: (id) {
+                        setState(() => _selectedModelVariant = id);
+                      },
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Action button
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton(
+                        onPressed: isComplete
+                            ? _proceed
+                            : (_recorderReady ? _toggleRecording : null),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: isRecording
+                              ? AppColors.surfaceContainerHighest
+                              : AppColors.primaryContainer,
+                          foregroundColor: isRecording
+                              ? AppColors.error
+                              : AppColors.onPrimary,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          elevation: 0,
+                        ),
+                        child: Text(
+                          isComplete
+                              ? 'Next — Run Inference'
+                              : isRecording
+                                  ? 'Stop recording'
+                                  : 'Start recording',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color:
+                                isRecording ? AppColors.error : AppColors.onPrimary,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 }
+

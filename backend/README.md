@@ -139,7 +139,7 @@ backend/
 ## Running Tests
 
 ```bash
-# Requires model artifacts in ../model_v1/
+# Loads trained model artifacts from model_v2/v2-model training (fallback to model_v1)
 pytest backend/test_api.py -v
 
 # Or standalone (no pytest)

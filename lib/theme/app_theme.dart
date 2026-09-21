@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 class AppColors {
   static const Color onError = Color(0xFFffffff);
   static const Color error = Color(0xFFba1a1a);
+  static const Color warning = Color(0xFFd97706);
   static const Color onSurfaceVariant = Color(0xFF464553);
   static const Color secondaryFixedDim = Color(0xFFffb694);
   static const Color secondaryContainer = Color(0xFFffa67b);
@@ -71,12 +72,10 @@ class AppTheme {
         onError: AppColors.onError,
         errorContainer: AppColors.errorContainer,
         onErrorContainer: AppColors.onErrorContainer,
-        background: AppColors.background,
-        onBackground: AppColors.onBackground,
         surface: AppColors.surface,
         onSurface: AppColors.onSurface,
-        surfaceVariant: AppColors.surfaceVariant,
         onSurfaceVariant: AppColors.onSurfaceVariant,
+
         outline: AppColors.outline,
         outlineVariant: AppColors.outlineVariant,
         shadow: Colors.black,

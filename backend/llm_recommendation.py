@@ -29,6 +29,7 @@ FEATURE_LABELS = {
     "mfcc_mean_2":  "MFCC-3 mean (spectral detail)",
     "mfcc_std_0":   "MFCC-1 std deviation (voice stability across time)",
     "mfcc_std_1":   "MFCC-2 std deviation (spectral variability)",
+    "mfcc_std_2":   "MFCC-3 std deviation (formant bandwidth & resonance fluctuation)",
     "mfcc_std_3":   "MFCC-4 std deviation (formant variation)",
     "mfcc_std_4":   "MFCC-5 std deviation (fine spectral variation)",
     "mfcc_std_6":   "MFCC-7 std deviation (high-freq spectral variation)",
@@ -77,6 +78,7 @@ def _build_prompt(
     risk_level: str,
     selected_features: dict[str, float],
     model_used: str,
+    patient_name: str = "Participant",
 ) -> str:
     """Build a clinically-framed prompt for the LLM."""
 
@@ -91,6 +93,8 @@ def _build_prompt(
 
     prompt = f"""You are a clinical voice analysis assistant for a Parkinson's Disease early-screening application (SIH26139). 
 You help patients and caregivers understand a non-invasive voice screening result.
+
+PATIENT / PARTICIPANT: {patient_name}
 
 SCREENING RESULT:
 - Risk Level: {risk_level.upper()}
@@ -107,9 +111,9 @@ IMPORTANT DISCLAIMERS TO INCLUDE:
 - Voice biomarkers can be affected by other conditions (vocal infections, aging, stress).
 
 YOUR TASK:
-Write a clear, compassionate, and medically responsible recommendation in 3–4 short paragraphs:
-1. Summarise what the screening found in plain language (no jargon).
-2. Explain what the key voice features mean in simple terms.
+Write a clear, compassionate, and medically responsible recommendation for {patient_name} in 3–4 short paragraphs:
+1. Summarise what the screening found for {patient_name} in plain language (no jargon).
+2. Explain what the key voice features mean in simple terms and how they relate to Parkinsonian voice changes.
 3. Give a concrete next-step recommendation based on the risk level.
 4. End with a reassuring note emphasising the importance of professional evaluation.
 
@@ -128,6 +132,7 @@ def generate_llm_recommendation(
     risk_level: str,
     selected_features: dict[str, float],
     model_used: str,
+    patient_name: str = "Participant",
     groq_api_key: Optional[str] = None,
 ) -> str:
     """
@@ -147,7 +152,7 @@ def generate_llm_recommendation(
 
         client = Groq(api_key=api_key)
 
-        prompt = _build_prompt(probability, risk_level, selected_features, model_used)
+        prompt = _build_prompt(probability, risk_level, selected_features, model_used, patient_name=patient_name)
 
         response = client.chat.completions.create(
             model="llama-3.1-70b-versatile",   # fast, smart, free tier
@@ -173,7 +178,7 @@ def generate_llm_recommendation(
 
     except Exception as exc:
         logger.warning("Groq LLM call failed: %s — using fallback.", exc)
-        return _fallback_recommendation(probability, risk_level)
+        return _fallback_recommendation(probability, risk_level, patient_name=patient_name)
 
 
 # ---------------------------------------------------------------------------
@@ -182,37 +187,34 @@ def generate_llm_recommendation(
 
 _FALLBACK_TEMPLATES = {
     "low": (
-        "Your voice screening result indicates a LOW risk of Parkinson's Disease-related voice changes. "
-        "The voice biomarkers analysed — including pitch stability, amplitude consistency, and spectral qualities "
-        "— are within the normal range for this screening tool.\n\n"
-        "While this is an encouraging result, it is important to remember that this is a screening tool, "
-        "not a clinical diagnosis. If you have any concerns about tremors, slowness of movement, or other "
-        "Parkinson's symptoms, please consult a neurologist regardless of this result.\n\n"
-        "We recommend repeating this screening periodically and maintaining a record of your voice health over time."
+        "Clinical voice screening for {name} indicates a LOW likelihood of Parkinson's Disease-related acoustic changes. "
+        "The voice biomarkers analysed — including fundamental pitch stability, amplitude consistency, and spectral envelope "
+        "— fall within normal physiological ranges.\n\n"
+        "While this is an encouraging result, remember that this is a non-invasive screening tool, "
+        "not a clinical diagnosis. If you or {name} experience tremors, stiffness, or speech fatigue, "
+        "please consult a neurologist regardless of this score.\n\n"
+        "We recommend repeating this screening periodically to track vocal biomarker stability over time."
     ),
     "moderate": (
-        "Your voice screening result shows a MODERATE risk of Parkinson's Disease-related voice changes. "
-        "Some voice biomarkers — such as variations in pitch stability or spectral energy — show mild deviations "
-        "from the typical healthy range. This does not mean you have Parkinson's Disease.\n\n"
-        "Moderate risk can be caused by other conditions such as vocal strain, respiratory infections, "
-        "aging, or anxiety. However, it warrants a follow-up with a neurologist or ENT specialist who can "
-        "perform a comprehensive clinical evaluation.\n\n"
-        "Please book an appointment with a specialist and mention this screening result. Early evaluation "
-        "is always beneficial, whatever the cause."
+        "Clinical voice screening for {name} shows a MODERATE likelihood of vocal biomarker deviations. "
+        "Certain acoustic features — such as pitch micro-variations or spectral tilt — exhibit mild irregularities "
+        "compared to baseline healthy phonation. This is not a diagnosis of Parkinson's Disease.\n\n"
+        "Moderate variations can also stem from temporary vocal fatigue, respiratory conditions, "
+        "reflux, or stress. However, an evaluation with a neurologist or speech specialist is recommended "
+        "to ensure comprehensive monitoring.\n\n"
+        "Please schedule a consultation with a specialist and present this report for reference."
     ),
     "high": (
-        "Your voice screening result indicates a HIGH risk of Parkinson's Disease-related voice changes. "
-        "Several voice biomarkers — including measures of pitch irregularity (jitter), amplitude variation "
-        "(shimmer), and voice clarity — show significant deviations associated with dysphonia patterns "
-        "seen in Parkinson's Disease.\n\n"
-        "This is NOT a diagnosis. Only a qualified neurologist can diagnose Parkinson's Disease through a "
-        "comprehensive clinical assessment. Many treatable conditions can cause similar voice patterns.\n\n"
-        "We strongly recommend seeking a neurological consultation as soon as possible. Please share this "
-        "screening report with your doctor. Early detection of Parkinson's Disease, when it does occur, "
-        "significantly improves the effectiveness of treatment and quality of life."
+        "Clinical voice screening for {name} indicates an ELEVATED / HIGH likelihood of voice patterns associated with Parkinson's Disease. "
+        "Multiple acoustic biomarkers — including cycle-to-cycle frequency perturbations (jitter), amplitude variation "
+        "(shimmer), and spectral energy dispersion — show significant deviations characteristic of hypophonia and dysphonia.\n\n"
+        "This is NOT a medical diagnosis. Only a licensed neurologist or movement disorder specialist can diagnose Parkinson's Disease "
+        "through comprehensive clinical examination. Several treatable conditions can also cause vocal instability.\n\n"
+        "We strongly advise booking a neurological consultation promptly. Please share this detailed biomarker report with your physician."
     ),
 }
 
 
-def _fallback_recommendation(probability: float, risk_level: str) -> str:
-    return _FALLBACK_TEMPLATES.get(risk_level, _FALLBACK_TEMPLATES["moderate"])
+def _fallback_recommendation(probability: float, risk_level: str, patient_name: str = "Participant") -> str:
+    tmpl = _FALLBACK_TEMPLATES.get(risk_level, _FALLBACK_TEMPLATES["moderate"])
+    return tmpl.format(name=patient_name)

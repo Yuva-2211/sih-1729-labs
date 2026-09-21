@@ -4,7 +4,7 @@ import '../theme/app_theme.dart';
 import '../services/api_service.dart';
 
 class AnalysisPipelineScreen extends StatefulWidget {
-  const AnalysisPipelineScreen({Key? key}) : super(key: key);
+  const AnalysisPipelineScreen({super.key});
 
   @override
   State<AnalysisPipelineScreen> createState() => _AnalysisPipelineScreenState();
@@ -17,7 +17,7 @@ class _AnalysisPipelineScreenState extends State<AnalysisPipelineScreen>
   double _progress = 0.0;
   bool _hasError = false;
   String _errorMessage = '';
-  PredictionResult? _result;
+
 
   // ---- Stage labels matching backend pipeline stages ---------------------
   static const List<Map<String, String>> _stages = [
@@ -27,7 +27,7 @@ class _AnalysisPipelineScreenState extends State<AnalysisPipelineScreen>
     {'title': 'Feature selection', 'subtitle': 'Top-8 quantum circuit features'},
     {'title': 'Quantum encoding', 'subtitle': 'Angle embedding → 8-qubit state'},
     {'title': 'Model inference', 'subtitle': 'Hybrid Quantum-Classical VQC'},
-    {'title': 'LLM recommendation', 'subtitle': 'Groq Llama 3 generating report...'},
+    {'title': 'Clinical recommendation', 'subtitle': 'Generating clinical report...'},
   ];
 
   late AnimationController _pulseController;
@@ -63,9 +63,12 @@ class _AnalysisPipelineScreenState extends State<AnalysisPipelineScreen>
   // ---- Pipeline execution -------------------------------------------------
 
   Future<void> _runPipeline() async {
-    // Get the file path passed from RecordScreen
+    // Get the file path and model options passed from RecordScreen
     final args = ModalRoute.of(context)?.settings.arguments as Map?;
     final filePath = args?['filePath'] as String?;
+    final modelVariant = args?['modelVariant'] as String? ?? 'classical_fp32';
+    final useLlm = args?['useLlm'] as bool? ?? true;
+    final patientName = args?['patientName'] as String? ?? 'Participant';
 
     if (filePath == null) {
       setState(() {
@@ -75,8 +78,8 @@ class _AnalysisPipelineScreenState extends State<AnalysisPipelineScreen>
       return;
     }
 
-    // Animate through stages 1-5 quickly (they happen server-side during the API call)
-    _uiTimer = Timer.periodic(const Duration(milliseconds: 600), (timer) {
+    // Animate through stages 1-5 (they happen server-side during the API call)
+    _uiTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) {
       if (!mounted) return;
       setState(() {
         if (_currentStep < 5) {
@@ -92,8 +95,9 @@ class _AnalysisPipelineScreenState extends State<AnalysisPipelineScreen>
       // --- Real API call ---
       final result = await NeuralVoiceApi().predictFromAudio(
         filePath,
-        modelVariant: 'hybrid_fp32',   // use quantum model
-        useLlm: true,
+        modelVariant: modelVariant,
+        useLlm: useLlm,
+        patientName: patientName,
       );
 
       _uiTimer?.cancel();
@@ -104,21 +108,21 @@ class _AnalysisPipelineScreenState extends State<AnalysisPipelineScreen>
           _currentStep = 6;
           _progress = 6 / 7.0;
         });
-        await Future.delayed(const Duration(milliseconds: 500));
+        await Future.delayed(const Duration(milliseconds: 400));
         if (mounted) {
           setState(() {
             _currentStep = 7;
             _progress = 1.0;
-            _result = result;
           });
+
         }
 
         // Short pause so user sees 100% before navigation
-        await Future.delayed(const Duration(milliseconds: 800));
+        await Future.delayed(const Duration(milliseconds: 600));
         if (mounted) {
           Navigator.pushReplacementNamed(
             context,
-            '/result',
+            '/report',
             arguments: result,
           );
         }
@@ -126,13 +130,50 @@ class _AnalysisPipelineScreenState extends State<AnalysisPipelineScreen>
     } catch (e) {
       _uiTimer?.cancel();
       if (mounted) {
+        String err = e.toString().replaceFirst('Exception: ', '');
+
+        // Strip raw API / server technical prefixes
+        err = err.replaceAll(RegExp(r'^API Error \(\d+\):\s*'), '');
+        err = err.replaceAll(RegExp(r'^Server error \(\d+\):\s*'), '');
+        // Clean out technical parameters like (RMS energy: 0.0001 < 0.005) or (flatness: ...)
+        err = err.replaceAll(RegExp(r'\s*\(RMS energy:[^\)]*\)'), '');
+        err = err.replaceAll(RegExp(r'\s*\(spectral flatness:[^\)]*\)'), '');
+        err = err.replaceAll(RegExp(r'\s*\(HNR:[^\)]*\)'), '');
+        err = err.replaceAll(RegExp(r'\s*\([0-9\.]+s of vocal sound detected\)'), '');
+        err = err.trim();
+
+        if (err.contains('SocketException') ||
+            err.contains('Connection refused') ||
+            err.contains('Failed host lookup')) {
+          err =
+              'The analysis service is currently unreachable. Please ensure the local backend server is running and try again.';
+        } else if (err.toLowerCase().contains('faint') ||
+            err.toLowerCase().contains('silent') ||
+            err.toLowerCase().contains('too quiet') ||
+            err.toLowerCase().contains('silence') ||
+            err.toLowerCase().contains('no vocal') ||
+            err.toLowerCase().contains('energy')) {
+          err =
+              'No audible speech was detected in your recording. Please hold your phone close and speak a sustained vowel /aaah/ clearly.';
+        } else if (err.toLowerCase().contains('short') ||
+            err.toLowerCase().contains('duration')) {
+          err =
+              'The recording was too short for clinical feature analysis. Please sustain your voice continuously for at least 5 seconds.';
+        } else if (err.toLowerCase().contains('noise') ||
+            err.toLowerCase().contains('static') ||
+            err.toLowerCase().contains('flatness')) {
+          err =
+              'Excessive background noise or static was detected. Please move to a quiet room and record your voice again.';
+        }
+
         setState(() {
           _hasError = true;
-          _errorMessage = e.toString().replaceFirst('Exception: ', '');
+          _errorMessage = err;
         });
       }
     }
   }
+
 
   // ---- UI -----------------------------------------------------------------
 
@@ -229,38 +270,151 @@ class _AnalysisPipelineScreenState extends State<AnalysisPipelineScreen>
                 const SizedBox(height: 32),
               ],
 
-              // Error state
+              // Error / Noise Detected State
               if (_hasError)
                 Expanded(
                   child: Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.error_outline,
-                            color: AppColors.error, size: 48),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Analysis Failed',
-                          style: theme.textTheme.headlineMedium?.copyWith(
-                              color: AppColors.error),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          _errorMessage,
-                          textAlign: TextAlign.center,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                              color: AppColors.onSurfaceVariant),
-                        ),
-                        const SizedBox(height: 24),
-                        ElevatedButton.icon(
-                          onPressed: () => Navigator.pop(context),
-                          icon: const Icon(Icons.refresh),
-                          label: const Text('Try Again'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primaryContainer,
+                    child: SingleChildScrollView(
+                      child: Container(
+                        constraints: const BoxConstraints(maxWidth: 480),
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceContainerLowest,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: (_errorMessage.toLowerCase().contains('noise') ||
+                                    _errorMessage.toLowerCase().contains('vocal') ||
+                                    _errorMessage.toLowerCase().contains('silent') ||
+                                    _errorMessage.toLowerCase().contains('short'))
+                                ? AppColors.warning.withValues(alpha: 0.4)
+                                : AppColors.error.withValues(alpha: 0.4),
                           ),
                         ),
-                      ],
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Container(
+                              width: 64,
+                              height: 64,
+                              decoration: BoxDecoration(
+                                color: (_errorMessage.toLowerCase().contains('noise') ||
+                                        _errorMessage.toLowerCase().contains('vocal') ||
+                                        _errorMessage.toLowerCase().contains('silent') ||
+                                        _errorMessage.toLowerCase().contains('short'))
+                                    ? AppColors.warning.withValues(alpha: 0.12)
+                                    : AppColors.error.withValues(alpha: 0.12),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                (_errorMessage.toLowerCase().contains('audible') ||
+                                        _errorMessage.toLowerCase().contains('silent') ||
+                                        _errorMessage.toLowerCase().contains('faint'))
+                                    ? Icons.mic_off_rounded
+                                    : (_errorMessage.toLowerCase().contains('short') ||
+                                            _errorMessage.toLowerCase().contains('duration'))
+                                        ? Icons.timer_outlined
+                                        : (_errorMessage.toLowerCase().contains('noise') ||
+                                                _errorMessage.toLowerCase().contains('static'))
+                                            ? Icons.hearing_disabled_rounded
+                                            : Icons.error_outline_rounded,
+                                color: (_errorMessage.toLowerCase().contains('noise') ||
+                                        _errorMessage.toLowerCase().contains('vocal') ||
+                                        _errorMessage.toLowerCase().contains('audible') ||
+                                        _errorMessage.toLowerCase().contains('silent') ||
+                                        _errorMessage.toLowerCase().contains('short'))
+                                    ? AppColors.warning
+                                    : AppColors.error,
+                                size: 32,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              (_errorMessage.toLowerCase().contains('audible') ||
+                                      _errorMessage.toLowerCase().contains('silent') ||
+                                      _errorMessage.toLowerCase().contains('faint'))
+                                  ? 'No Speech Detected'
+                                  : (_errorMessage.toLowerCase().contains('short') ||
+                                          _errorMessage.toLowerCase().contains('duration'))
+                                      ? 'Recording Too Short'
+                                      : (_errorMessage.toLowerCase().contains('noise') ||
+                                              _errorMessage.toLowerCase().contains('static'))
+                                          ? 'Noise Detected'
+                                          : 'Analysis Incomplete',
+                              style: theme.textTheme.titleLarge?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.onSurface,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              _errorMessage,
+                              textAlign: TextAlign.center,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                color: AppColors.onSurfaceVariant,
+                                height: 1.5,
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                            // Phonation guidance card
+                            Container(
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: AppColors.surfaceContainerLow,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                    color: AppColors.outlineVariant.withValues(alpha: 0.5)),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.tips_and_updates_outlined,
+                                          size: 16, color: AppColors.primaryContainer),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        'Recording Tips for Accurate Screening',
+                                        style: theme.textTheme.labelSmall?.copyWith(
+                                          fontWeight: FontWeight.bold,
+                                          color: AppColors.primaryContainer,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    '• Find a quiet room without background fans or conversation.\n'
+                                    '• Hold your phone ~15 cm (6 inches) from your mouth.\n'
+                                    '• Take a breath and sustain the vowel sound "aaah" steadily for 5–10 seconds.',
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: AppColors.onSurfaceVariant,
+                                      height: 1.45,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+                            SizedBox(
+                              width: double.infinity,
+                              height: 46,
+                              child: ElevatedButton.icon(
+                                onPressed: () => Navigator.pop(context),
+                                icon: const Icon(Icons.mic_rounded, size: 18),
+                                label: const Text('Record Voice Again'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppColors.primaryContainer,
+                                  foregroundColor: AppColors.onPrimary,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  elevation: 0,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 )

@@ -13,7 +13,11 @@ import sys
 import tempfile
 
 import numpy as np
-import pytest
+try:
+    import pytest
+except ImportError:
+    pytest = None
+
 from fastapi.testclient import TestClient
 
 # Make sure imports resolve from the backend directory
@@ -79,11 +83,21 @@ def test_predict_audio_classical_fp32():
     assert "recommendation" in data
     assert "request_id" in data
     assert "selected_features" in data
+    assert "raw_waveform" in data
+    assert "preprocessed_waveform" in data
+    assert "raw_audio_b64" in data
+    assert "preprocessed_audio_b64" in data
+    assert "llm_recommendation" in data
     assert data["latency_ms"] > 0
 
 
-@pytest.mark.parametrize("variant", ["classical_fp32", "classical_int8"])
-def test_predict_audio_variants(variant):
+def _parametrize_variants(func):
+    if pytest is not None:
+        return pytest.mark.parametrize("variant", ["classical_fp32", "classical_int8"])(func)
+    return func
+
+@_parametrize_variants
+def test_predict_audio_variants(variant="classical_fp32"):
     wav_bytes = _make_sine_wav()
     resp = client.post(
         f"/api/v1/predict?model_variant={variant}",
@@ -118,6 +132,30 @@ def test_predict_from_features():
     assert data["risk_level"] in ("low", "moderate", "high")
 
 
+def _make_noise_wav(duration_s: float = 3.0, sr: int = 16_000) -> bytes:
+    """Generate random broadband noise in memory for testing."""
+    import wave, struct, random
+    n_samples = int(sr * duration_s)
+    samples = [int(random.uniform(-12000, 12000)) for _ in range(n_samples)]
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sr)
+        wf.writeframes(struct.pack(f"<{n_samples}h", *samples))
+    return buf.getvalue()
+
+
+def test_predict_random_noise_rejected():
+    wav_bytes = _make_noise_wav()
+    resp = client.post(
+        "/api/v1/predict?model_variant=classical_fp32",
+        files={"file": ("noise.wav", wav_bytes, "audio/wav")},
+    )
+    assert resp.status_code == 422
+    assert "noise" in resp.json()["detail"].lower() or "vocal" in resp.json()["detail"].lower()
+
+
 def test_predict_from_features_empty_dict():
     """Missing features should default to 0.0 — must not crash."""
     payload = {"features": {}, "model_variant": "classical_fp32"}
@@ -130,15 +168,17 @@ def test_predict_from_features_empty_dict():
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    print("Running smoke tests …")
+    print("Running smoke tests ...")
     test_health()
-    print("✓ health")
+    print("[OK] health")
     test_models_status()
-    print("✓ models")
+    print("[OK] models")
     test_predict_audio_classical_fp32()
-    print("✓ predict audio (classical_fp32)")
+    print("[OK] predict audio (classical_fp32)")
+    test_predict_random_noise_rejected()
+    print("[OK] predict audio rejects random noise (422)")
     test_predict_from_features()
-    print("✓ predict from features")
+    print("[OK] predict from features")
     test_predict_from_features_empty_dict()
-    print("✓ predict from empty features")
-    print("\nAll smoke tests passed ✓")
+    print("[OK] predict from empty features")
+    print("\nAll smoke tests passed [OK]")

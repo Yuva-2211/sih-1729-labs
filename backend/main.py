@@ -46,10 +46,10 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Warming up models …")
+    logger.info("Warming up models ...")
     try:
         inference._load_models()
-        logger.info("All models ready ✓")
+        logger.info("All models ready [OK]")
     except Exception as exc:
         logger.error("Model warm-up failed: %s", exc)
     yield
@@ -97,6 +97,12 @@ class PredictionResponse(BaseModel):
     inference_latency_ms: float = Field(..., description="Model inference latency (excl. LLM) in ms")
     latency_ms: float = Field(..., description="Total end-to-end pipeline latency (incl. LLM) in ms")
     model_used: str
+    raw_waveform: list[float] = Field(default_factory=list, description="200-pt raw audio amplitude snapshot")
+    preprocessed_waveform: list[float] = Field(default_factory=list, description="200-pt VAD-trimmed normalised audio snapshot")
+    raw_audio_b64: str = Field(default="", description="Base64-encoded raw WAV audio for client playback")
+    preprocessed_audio_b64: str = Field(default="", description="Base64-encoded preprocessed WAV audio for client playback")
+    patient_name: str = Field(default="Participant", description="Participant or patient name")
+
 
 
 class FeaturePredictRequest(BaseModel):
@@ -224,6 +230,10 @@ async def predict_audio(
         default=True,
         description="Enable Groq Llama 3 LLM recommendation (Stage 7). Set false for faster responses.",
     ),
+    patient_name: str = Query(
+        default="Participant",
+        description="Participant or patient name for the clinical report.",
+    ),
 ):
     """
     **Primary endpoint** — full Stage-1→4 pipeline:
@@ -243,7 +253,12 @@ async def predict_audio(
 
     try:
         tmp_path = _save_upload_to_temp(file)
-        result = inference.predict(tmp_path, model_variant=model_variant, use_llm=use_llm)
+        result = inference.predict(
+            tmp_path,
+            model_variant=model_variant,
+            use_llm=use_llm,
+            patient_name=patient_name,
+        )
         return PredictionResponse(request_id=request_id, **result)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))

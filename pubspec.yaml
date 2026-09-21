@@ -48,6 +48,16 @@ dependencies:
   # File picker (for testing with existing files)
   file_picker: ^8.1.7
 
+  # Local database
+  sqflite: ^2.3.3+1
+
+  # Charts for waveform visualization
+  fl_chart: ^0.69.0
+
+  # Maps & location
+  url_launcher: ^6.3.1
+  geolocator: ^13.0.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

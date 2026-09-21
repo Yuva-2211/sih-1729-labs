@@ -299,6 +299,7 @@ def predict(
 
     # --- Stage 1+2: Audio preprocessing + Feature extraction ---
     t0 = time.perf_counter()
+    logger.info("[inference] Starting prediction for audio: %s (variant=%s, use_llm=%s)", wav_path, model_variant, use_llm)
 
     # Capture raw waveform BEFORE any processing (fast single read)
     try:
@@ -314,8 +315,12 @@ def predict(
     if _y_raw.ndim > 1:
         _y_raw = np.mean(_y_raw, axis=1)
 
+    dur_s = len(_y_raw) / _sr_raw
+    logger.info("[inference] Stage 1: Loaded audio: duration=%.2fs, samples=%d", dur_s, len(_y_raw))
+
     # Validate audio quality to immediately reject random noise or silence
     validate_audio_quality(_y_raw, _sr_raw)
+    logger.info("[inference] Stage 1: Quality check passed (valid sustained phonation)")
 
     raw_waveform = _downsample(_y_raw)
 
@@ -324,7 +329,9 @@ def predict(
     sf.write(_raw_buf, _y_raw, 16_000, format='WAV', subtype='PCM_16')
     raw_audio_b64 = base64.b64encode(_raw_buf.getvalue()).decode('utf-8')
 
+    t_feat_start = time.perf_counter()
     all_feats = extract_all_features(wav_path, y=_y_raw, sr=_sr_raw)
+    logger.info("[inference] Stage 2: Feature extraction completed in %.1f ms", (time.perf_counter() - t_feat_start) * 1000)
 
     # Capture preprocessed waveform (reuse array without reloading from disk)
     import librosa as _librosa
@@ -362,17 +369,20 @@ def predict(
         model = _classical_fp32
         model_variant = "classical_fp32 (fallback)"
 
+    t_infer_start = time.perf_counter()
     model.eval()
     with torch.no_grad():
         prob = float(model(x_tensor).squeeze())
 
+    inference_latency_ms = (time.perf_counter() - t_infer_start) * 1000
+    logger.info("[inference] Stage 5: %s inference completed in %.1f ms | raw_prob=%.4f", model_variant, inference_latency_ms, prob)
+
     # --- Stage 6: Post-processing → risk level ---
     risk_level, rule_recommendation = _interpret(prob)
 
-    inference_latency_ms = (time.perf_counter() - t0) * 1000
-
     # --- Stage 7: LLM recommendation ---
     if use_llm:
+        t_llm_start = time.perf_counter()
         llm_rec = generate_llm_recommendation(
             probability=prob,
             risk_level=risk_level,
@@ -380,10 +390,12 @@ def predict(
             model_used=model_variant,
             patient_name=patient_name,
         )
+        logger.info("[inference] Stage 7: LLM finished in %.1f ms", (time.perf_counter() - t_llm_start) * 1000)
     else:
         llm_rec = rule_recommendation
 
     total_latency_ms = (time.perf_counter() - t0) * 1000
+    logger.info("[inference] Pipeline complete in %.1f ms | risk=%s", total_latency_ms, risk_level)
 
     return {
         "probability":              round(prob, 4),

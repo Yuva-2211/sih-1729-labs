@@ -150,14 +150,14 @@ def generate_llm_recommendation(
     try:
         from groq import Groq
 
-        # Add strict timeout (6.0s) and max_retries (1) so LLM never blocks the request
-        client = Groq(api_key=api_key, timeout=6.0, max_retries=1)
+        # Add strict timeout (3.5s) and max_retries (1) so LLM never stalls mobile response
+        client = Groq(api_key=api_key, timeout=3.5, max_retries=1)
 
         prompt = _build_prompt(probability, risk_level, selected_features, model_used, patient_name=patient_name)
 
-        # Use currently active Groq models: llama-3.3-70b-versatile or llama-3.1-8b-instant
+        # Use fast, robust Groq models: llama-3.1-8b-instant provides sub-second clinical summaries
         try:
-            model_name = "llama-3.3-70b-versatile"
+            model_name = "llama-3.1-8b-instant"
             response = client.chat.completions.create(
                 model=model_name,
                 messages=[
@@ -171,14 +171,13 @@ def generate_llm_recommendation(
                     },
                     {"role": "user", "content": prompt},
                 ],
-                temperature=0.4,
-                max_tokens=300,
-                top_p=0.9,
+                temperature=0.3,
+                max_tokens=250,
             )
         except Exception:
-            # Fallback to ultra-fast 8B instant model if 70B is busy, decommissioned, or rate-limited
+            # Fallback to llama-3.3-70b-versatile if 8b is unavailable
             response = client.chat.completions.create(
-                model="llama-3.1-8b-instant",
+                model="llama-3.3-70b-versatile",
                 messages=[
                     {
                         "role": "system",
@@ -186,7 +185,7 @@ def generate_llm_recommendation(
                     },
                     {"role": "user", "content": prompt},
                 ],
-                temperature=0.4,
+                temperature=0.3,
                 max_tokens=250,
             )
 

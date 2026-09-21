@@ -24,6 +24,7 @@ from typing import Literal, Optional
 import numpy as np
 import torch
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -167,10 +168,11 @@ class HealthResponse(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _save_upload_to_temp(upload: UploadFile) -> str:
+async def _save_upload_to_temp(upload: UploadFile) -> str:
     """Persist the uploaded file to a temp path and return the path string.
 
     Fix #3: Validates extension against ALLOWED_AUDIO_EXTENSIONS before saving.
+    Uses non-blocking async read to prevent threadpool I/O deadlocks.
     """
     suffix = Path(upload.filename or "audio.wav").suffix.lower() or ".wav"
     if suffix not in ALLOWED_AUDIO_EXTENSIONS:
@@ -183,10 +185,15 @@ def _save_upload_to_temp(upload: UploadFile) -> str:
         )
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
     try:
-        shutil.copyfileobj(upload.file, tmp)
+        content = await upload.read()
+        if not content:
+            raise HTTPException(status_code=422, detail="Empty audio recording received.")
+        tmp.write(content)
+        tmp.flush()
     finally:
         tmp.close()
     return tmp.name
+
 
 
 # ---------------------------------------------------------------------------
@@ -254,7 +261,7 @@ async def list_models():
     tags=["Prediction"],
     summary="Predict PD risk from raw audio",
 )
-def predict_audio(
+async def predict_audio(
     file: UploadFile = File(
         ...,
         description=(
@@ -302,8 +309,9 @@ def predict_audio(
     tmp_path: Optional[str] = None
 
     try:
-        tmp_path = _save_upload_to_temp(file)  # raises HTTPException on bad extension
-        result = inference.predict(
+        tmp_path = await _save_upload_to_temp(file)
+        result = await run_in_threadpool(
+            inference.predict,
             tmp_path,
             model_variant=model_variant,
             use_llm=use_llm,
@@ -327,7 +335,10 @@ def predict_audio(
         raise HTTPException(status_code=500, detail=f"Inference error: {exc}")
     finally:
         if tmp_path and os.path.exists(tmp_path):
-            os.remove(tmp_path)
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
 
 
 @app.post(

@@ -11,19 +11,13 @@ try:
 except ImportError:
     class spaces:
         @staticmethod
-        def GPU(*args, **kwargs):
-            def decorator(fn):
-                return fn
-            if len(args) == 1 and callable(args[0]):
-                return args[0]
-            return decorator
-
-@spaces.GPU(duration=10)
-def dummy_gpu():
-    return None
+        def GPU(fn=None, duration=60):
+            def decorator(f):
+                return f
+            return decorator if fn is None else fn
 
 import gradio as gr
-from backend.main import app
+from backend.main import app as fastapi_app
 import inference
 
 @spaces.GPU(duration=60)
@@ -59,14 +53,8 @@ with gr.Blocks(title="NeuroVoice API") as demo:
     gr.Markdown("- **Health Status**: [Check /api/v1/health](/api/v1/health)")
     gr.Markdown("- **Active Models**: [View /api/v1/models](/api/v1/models)")
 
-# Mount Gradio onto the existing FastAPI app at root /
-app = gr.mount_gradio_app(app, demo, path="/")
+# Attach all FastAPI endpoints into demo.app
+demo.app.include_router(fastapi_app.router)
 
 if __name__ == "__main__":
-    import uvicorn
-    try:
-        dummy_gpu()
-    except Exception:
-        pass
-    port = int(os.environ.get("PORT", 7860))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    demo.launch(server_name="0.0.0.0", server_port=int(os.environ.get("PORT", 7860)))

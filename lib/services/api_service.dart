@@ -19,23 +19,20 @@ class ApiConfig {
   static List<String> get candidateUrls {
     if (kIsWeb) {
       return const [
-        'https://yuva-2211-sih-1729-nv.hf.space', // Hugging Face Space (2 vCPU, 16GB RAM)
-        'https://sih-1729-labs.onrender.com',      // Render Cloud Backend
+        'https://sih-1729-labs.onrender.com',
         'http://127.0.0.1:8000',
       ];
     }
     if (Platform.isAndroid) {
       return const [
-        'https://yuva-2211-sih-1729-nv.hf.space', // Hugging Face Space (2 vCPU, 16GB RAM)
-        'https://sih-1729-labs.onrender.com',      // Render Cloud Backend
-        'http://127.0.0.1:8000',                  // Physical device (with adb reverse)
-        'http://localhost:8000',                  // Alternative localhost
-        'http://10.0.2.2:8000',                    // Android Emulator
-        'http://10.233.29.227:8000',               // Local Wi-Fi network IP
+        'https://sih-1729-labs.onrender.com', // Live Render Cloud Backend
+        'http://127.0.0.1:8000',               // Physical device (with adb reverse)
+        'http://localhost:8000',               // Alternative localhost
+        'http://10.0.2.2:8000',                 // Android Emulator
+        'http://10.233.29.227:8000',            // Local Wi-Fi network IP
       ];
     }
     return const [
-      'https://yuva-2211-sih-1729-nv.hf.space',
       'https://sih-1729-labs.onrender.com',
       'http://127.0.0.1:8000',
     ];
@@ -207,29 +204,23 @@ class NeuralVoiceApi {
 
   // ---- Probe candidate hosts ----------------------------------------------
 
+  /// Probes candidate URLs sequentially and returns the first that responds with HTTP 200.
+  /// Sequential probing (not parallel) avoids wasting battery/bandwidth on simultaneous
+  /// connections to all candidate hosts.
   Future<String?> _probeWorkingHost() async {
-    debugPrint('[NeuralVoiceApi] Probing candidates: ${ApiConfig.candidateUrls}');
-    final futures = ApiConfig.candidateUrls.map((host) async {
+    debugPrint('[NeuralVoiceApi] Probing candidates sequentially: ${ApiConfig.candidateUrls}');
+    for (final host in ApiConfig.candidateUrls) {
       try {
         final clean = host.replaceAll(RegExp(r'/+$'), '');
         final uri = Uri.parse('$clean/api/v1/health');
-        final resp = await http.get(uri).timeout(const Duration(seconds: 10));
+        final resp = await http.get(uri).timeout(const Duration(seconds: 6));
         if (resp.statusCode == 200) {
-          debugPrint('[NeuralVoiceApi] Success reaching: $clean');
+          ApiConfig.setBaseUrl(clean);
+          debugPrint('[NeuralVoiceApi] Active backend resolved to: $clean');
           return clean;
         }
       } catch (e) {
         debugPrint('[NeuralVoiceApi] Could not reach $host: $e');
-      }
-      return null;
-    });
-
-    final results = await Future.wait(futures);
-    for (final host in results) {
-      if (host != null) {
-        ApiConfig.setBaseUrl(host);
-        debugPrint('[NeuralVoiceApi] Active backend resolved to: $host');
-        return host;
       }
     }
     debugPrint('[NeuralVoiceApi] All candidate hosts unreachable');

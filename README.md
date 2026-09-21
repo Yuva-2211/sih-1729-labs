@@ -1,4 +1,3 @@
-
 # NeuroVoice (SIH-1729 / SIH-26139)
 ### AI-Powered Parkinson's Disease Screening via Vocal Biomarkers & Hybrid Quantum-Classical Machine Learning
 

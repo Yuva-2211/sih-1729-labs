@@ -189,8 +189,9 @@ Future<String?> showV2ModelSelectorModal(
                 return GestureDetector(
                   onTap: () {
                     setModalState(() => selected = opt.id);
-                    V2ModelRegistry.activeModelId = opt.id;
+                    // Fix #10: NeuralVoiceApi is the single source of truth for model selection
                     NeuralVoiceApi.activeModelVariant = opt.id;
+                    V2ModelRegistry.activeModelId = opt.id;
                     if (onSelected != null) {
                       onSelected(opt.id);
                     }

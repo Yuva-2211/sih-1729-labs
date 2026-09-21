@@ -6,6 +6,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import '../theme/app_theme.dart';
+import '../services/api_service.dart';
 import '../widgets/v2_model_selector.dart';
 
 class RecordScreen extends StatefulWidget {
@@ -166,7 +167,8 @@ class _RecordScreenState extends State<RecordScreen>
   }
 
   // ---- Model Variant Selection (Serving v2 Models) -----------------------
-  String _selectedModelVariant = V2ModelRegistry.activeModelId;
+  // Fix #10: read from NeuralVoiceApi.activeModelVariant (single source of truth)
+  String _selectedModelVariant = NeuralVoiceApi.activeModelVariant;
   final bool _useLlm = true;
 
   void _proceed() {

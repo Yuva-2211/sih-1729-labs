@@ -71,9 +71,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Fix #2: Read allowed origins from environment variable (restrict in production)
+_raw_origins = os.environ.get("ALLOWED_ORIGINS", "*")
+allowed_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],          # Restrict in production
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -81,6 +85,9 @@ app.add_middleware(
 
 # Supported model variants
 ModelVariant = Literal["classical_fp32", "classical_int8", "hybrid_fp32", "hybrid_int8"]
+
+# Fix #3: Allowed audio file extensions
+ALLOWED_AUDIO_EXTENSIONS = {".wav", ".mp3", ".ogg", ".m4a", ".flac", ".webm", ".aac"}
 
 
 # ---------------------------------------------------------------------------
@@ -126,13 +133,19 @@ class FeaturePredictRequest(BaseModel):
     model_variant: ModelVariant = "classical_fp32"
 
 
+# Fix #11: Unified response schema matching PredictionResponse (minus audio/waveform fields
+# which are unavailable when features are pre-extracted client-side)
 class FeaturePredictResponse(BaseModel):
     request_id: str
     probability: float
     risk_level: Literal["low", "moderate", "high"]
     recommendation: str
+    llm_recommendation: str = ""
+    selected_features: dict[str, float] = Field(default_factory=dict)
+    inference_latency_ms: float
     latency_ms: float
     model_used: str
+    patient_name: str = "Participant"
 
 
 class ModelsStatusResponse(BaseModel):
@@ -155,8 +168,19 @@ class HealthResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 def _save_upload_to_temp(upload: UploadFile) -> str:
-    """Persist the uploaded file to a temp path and return the path string."""
-    suffix = Path(upload.filename or "audio.wav").suffix or ".wav"
+    """Persist the uploaded file to a temp path and return the path string.
+
+    Fix #3: Validates extension against ALLOWED_AUDIO_EXTENSIONS before saving.
+    """
+    suffix = Path(upload.filename or "audio.wav").suffix.lower() or ".wav"
+    if suffix not in ALLOWED_AUDIO_EXTENSIONS:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Unsupported file type '{suffix}'. "
+                f"Accepted formats: {', '.join(sorted(ALLOWED_AUDIO_EXTENSIONS))}"
+            ),
+        )
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
     try:
         shutil.copyfileobj(upload.file, tmp)
@@ -252,7 +276,7 @@ def predict_audio(
     tmp_path: Optional[str] = None
 
     try:
-        tmp_path = _save_upload_to_temp(file)
+        tmp_path = _save_upload_to_temp(file)  # raises HTTPException on bad extension
         result = inference.predict(
             tmp_path,
             model_variant=model_variant,
@@ -260,6 +284,8 @@ def predict_audio(
             patient_name=patient_name,
         )
         return PredictionResponse(request_id=request_id, **result)
+    except HTTPException:
+        raise  # re-raise our own HTTP exceptions unchanged
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     except FileNotFoundError as exc:
@@ -297,6 +323,8 @@ async def predict_from_features(body: FeaturePredictRequest):
         [body.features.get(f, 0.0) for f in selected], dtype=np.float32
     ).reshape(1, -1)
 
+    feature_dict = dict(zip(selected, vec.flatten().tolist()))
+
     scaled = scaler.transform(vec)
     x = torch.tensor(scaled, dtype=torch.float32)
 
@@ -311,15 +339,23 @@ async def predict_from_features(body: FeaturePredictRequest):
     with torch.no_grad():
         prob = float(model(x).squeeze())
 
-    latency_ms = (time.perf_counter() - t0) * 1000
+    inference_latency_ms = (time.perf_counter() - t0) * 1000
+
+    # Fix #9: use clean risk interpretation helper (no 1.01 hack)
     risk_level, recommendation = inference._interpret(prob)
 
+    total_latency_ms = (time.perf_counter() - t0) * 1000
+
+    # Fix #11: return unified schema matching PredictionResponse fields
     return FeaturePredictResponse(
         request_id=request_id,
         probability=round(prob, 4),
         risk_level=risk_level,
         recommendation=recommendation,
-        latency_ms=round(latency_ms, 2),
+        llm_recommendation=recommendation,  # rule-based; no LLM on feature endpoint
+        selected_features=feature_dict,
+        inference_latency_ms=round(inference_latency_ms, 2),
+        latency_ms=round(total_latency_ms, 2),
         model_used=body.model_variant,
     )
 

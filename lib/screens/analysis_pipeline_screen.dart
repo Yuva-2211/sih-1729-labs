@@ -17,6 +17,8 @@ class _AnalysisPipelineScreenState extends State<AnalysisPipelineScreen>
   double _progress = 0.0;
   bool _hasError = false;
   String _errorMessage = '';
+  // Fix #7: cancellation flag — suppresses result handling after user cancels
+  bool _cancelled = false;
 
 
   // ---- Stage labels matching backend pipeline stages ---------------------
@@ -55,6 +57,7 @@ class _AnalysisPipelineScreenState extends State<AnalysisPipelineScreen>
 
   @override
   void dispose() {
+    _cancelled = true; // Fix #7: mark cancelled so in-flight callbacks are no-ops
     _pulseController.dispose();
     _uiTimer?.cancel();
     super.dispose();
@@ -102,6 +105,9 @@ class _AnalysisPipelineScreenState extends State<AnalysisPipelineScreen>
 
       _uiTimer?.cancel();
 
+      // Fix #7: discard result if user cancelled while request was in-flight
+      if (_cancelled || !mounted) return;
+
       if (mounted) {
         // Animate to stage 6 then 7
         setState(() {
@@ -109,51 +115,47 @@ class _AnalysisPipelineScreenState extends State<AnalysisPipelineScreen>
           _progress = 6 / 7.0;
         });
         await Future.delayed(const Duration(milliseconds: 400));
-        if (mounted) {
-          setState(() {
-            _currentStep = 7;
-            _progress = 1.0;
-          });
-
-        }
+        if (_cancelled || !mounted) return;
+        setState(() {
+          _currentStep = 7;
+          _progress = 1.0;
+        });
 
         // Short pause so user sees 100% before navigation
         await Future.delayed(const Duration(milliseconds: 600));
-        if (mounted) {
-          Navigator.pushReplacementNamed(
-            context,
-            '/report',
-            arguments: result,
-          );
-        }
+        if (_cancelled || !mounted) return;
+        Navigator.pushReplacementNamed(
+          context,
+          '/report',
+          arguments: result,
+        );
       }
     } catch (e) {
       _uiTimer?.cancel();
-      if (mounted) {
-        final rawErr = e.toString().toLowerCase();
-        String err;
+      if (_cancelled || !mounted) return; // Fix #7: ignore errors after cancel
+      final rawErr = e.toString().toLowerCase();
+      String err;
 
-        if (rawErr.contains('faint') ||
-            rawErr.contains('silent') ||
-            rawErr.contains('too quiet') ||
-            rawErr.contains('silence') ||
-            rawErr.contains('no vocal') ||
-            rawErr.contains('audible')) {
-          err = 'No clear speech detected. Please hold your phone closer and speak clearly.';
-        } else if (rawErr.contains('short') || rawErr.contains('duration')) {
-          err = 'Recording was too short. Please sustain your voice for at least 5 seconds.';
-        } else if (rawErr.contains('noise') || rawErr.contains('static') || rawErr.contains('flatness')) {
-          err = 'Excessive background noise detected. Please record in a quiet room.';
-        } else {
-          // Clean production user-facing message - no technical exceptions or production errors
-          err = 'Recording failed. Please record your voice again.';
-        }
-
-        setState(() {
-          _hasError = true;
-          _errorMessage = err;
-        });
+      if (rawErr.contains('faint') ||
+          rawErr.contains('silent') ||
+          rawErr.contains('too quiet') ||
+          rawErr.contains('silence') ||
+          rawErr.contains('no vocal') ||
+          rawErr.contains('audible')) {
+        err = 'No clear speech detected. Please hold your phone closer and speak clearly.';
+      } else if (rawErr.contains('short') || rawErr.contains('duration')) {
+        err = 'Recording was too short. Please sustain your voice for at least 5 seconds.';
+      } else if (rawErr.contains('noise') || rawErr.contains('static') || rawErr.contains('flatness')) {
+        err = 'Excessive background noise detected. Please record in a quiet room.';
+      } else {
+        // Clean production user-facing message - no technical exceptions or production errors
+        err = 'Recording failed. Please record your voice again.';
       }
+
+      setState(() {
+        _hasError = true;
+        _errorMessage = err;
+      });
     }
   }
 
@@ -178,6 +180,7 @@ class _AnalysisPipelineScreenState extends State<AnalysisPipelineScreen>
                 children: [
                   GestureDetector(
                     onTap: () {
+                      _cancelled = true; // Fix #7: suppress in-flight result
                       _uiTimer?.cancel();
                       Navigator.pop(context);
                     },

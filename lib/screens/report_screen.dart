@@ -37,7 +37,6 @@ class _ReportScreenState extends State<ReportScreen>
 
   // Doctor finder (via device location & browser search)
   bool _loadingDoctors = false;
-  bool _autoOpenedMaps = false;
 
   // Risk colour helpers
   static const Map<String, Color> _riskColors = {
@@ -77,11 +76,28 @@ class _ReportScreenState extends State<ReportScreen>
       // Write audio temp files
       _writeAudioFiles(_result!);
 
-      // If high likelihood, directly pop out into Maps as requested
-      if (_result!.riskLevel == 'high' && !_autoOpenedMaps) {
-        _autoOpenedMaps = true;
+      // Fix #8: No longer auto-opens Maps without user consent.
+      // For HIGH risk, show a non-disruptive SnackBar nudge instead.
+      // The 'Find Nearby Neurologists' button on the report page handles the Maps action.
+      if (_result!.riskLevel == 'high') {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          _searchDoctorsInBrowser(query: 'neurologist');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text(
+                  'High risk detected — consider finding a neurologist nearby.',
+                ),
+                backgroundColor: const Color(0xFFB85450),
+                behavior: SnackBarBehavior.floating,
+                duration: const Duration(seconds: 5),
+                action: SnackBarAction(
+                  label: 'Find',
+                  textColor: Colors.white,
+                  onPressed: () => _searchDoctorsInBrowser(query: 'neurologist'),
+                ),
+              ),
+            );
+          }
         });
       }
     }

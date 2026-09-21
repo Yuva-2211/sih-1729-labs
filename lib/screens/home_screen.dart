@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bottom_nav_bar.dart';
@@ -54,9 +55,10 @@ class _HomeScreenState extends State<HomeScreen> {
         preferredSize: const Size.fromHeight(64.0),
         child: ClipRRect(
           child: BackdropFilter(
-            filter: ColorFilter.mode(Colors.transparent, BlendMode.srcOver),
+            // Fix #12: real frosted-glass blur (was a no-op ColorFilter.mode(transparent))
+            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
             child: AppBar(
-              backgroundColor: AppColors.surface.withValues(alpha: 0.3),
+              backgroundColor: AppColors.surface.withValues(alpha: 0.75),
               elevation: 0,
               centerTitle: false,
               shape: Border(
@@ -75,11 +77,13 @@ class _HomeScreenState extends State<HomeScreen> {
               actions: [
                 Center(
                   child: V2ModelSelectorPill(
-                    currentModelId: V2ModelRegistry.activeModelId,
+                    // Fix #10: single source of truth — read from NeuralVoiceApi
+                    currentModelId: NeuralVoiceApi.activeModelVariant,
                     onSelected: (newId) {
                       setState(() {
-                        V2ModelRegistry.activeModelId = newId;
+                        // Fix #10: write to both so widget layer stays in sync
                         NeuralVoiceApi.activeModelVariant = newId;
+                        V2ModelRegistry.activeModelId = newId;
                       });
                     },
                   ),

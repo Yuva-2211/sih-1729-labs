@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'api_service.dart';
@@ -166,9 +168,35 @@ class ReportDatabase {
 
   // ---- CRUD ---------------------------------------------------------------
 
-  /// Save a PredictionResult to the DB. Returns the inserted row id.
+  /// Copy an audio recording from the (volatile) temp directory to the app's
+  /// documents directory so it persists across app sessions.
+  /// Returns the new persistent path, or the original path on failure.
+  static Future<String?> copyAudioToDocuments(String tempPath) async {
+    try {
+      final src = File(tempPath);
+      if (!src.existsSync()) return null;
+      final docsDir = await getApplicationDocumentsDirectory();
+      final audioDir = Directory('${docsDir.path}/neurovoice_audio');
+      if (!audioDir.existsSync()) audioDir.createSync(recursive: true);
+      final filename = 'nv_${DateTime.now().millisecondsSinceEpoch}.wav';
+      final dest = '${audioDir.path}/$filename';
+      await src.copy(dest);
+      return dest;
+    } catch (_) {
+      return null; // Never let copy errors break the prediction flow
+    }
+  }
+
+  /// Save a PredictionResult to the DB.
+  /// If [audioPath] points to a temp file, it is copied to the persistent
+  /// documents directory first. Returns the inserted row id.
   Future<int> saveReport(PredictionResult result, {String? audioPath}) async {
     final db = await database;
+    // Fix #16: persist audio to documents dir so history playback survives restarts
+    String? persistentAudioPath;
+    if (audioPath != null) {
+      persistentAudioPath = await copyAudioToDocuments(audioPath) ?? audioPath;
+    }
     final record = ReportRecord(
       requestId: result.requestId,
       timestamp: DateTime.now(),
@@ -178,7 +206,7 @@ class ReportDatabase {
       recommendation: result.recommendation,
       modelUsed: result.modelUsed,
       selectedFeaturesJson: jsonEncode(result.selectedFeatures),
-      audioPath: audioPath,
+      audioPath: persistentAudioPath,
       latencyMs: result.latencyMs,
       inferenceLatencyMs: result.inferenceLatencyMs,
       patientName: result.patientName,

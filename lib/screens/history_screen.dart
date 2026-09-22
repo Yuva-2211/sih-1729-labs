@@ -5,9 +5,12 @@ import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bottom_nav_bar.dart';
 import '../services/database_service.dart';
+import 'main_shell.dart';
 
 class HistoryScreen extends StatefulWidget {
-  const HistoryScreen({super.key});
+  final void Function(ReportRecord)? onSelectReport;
+
+  const HistoryScreen({super.key, this.onSelectReport});
 
   @override
   State<HistoryScreen> createState() => _HistoryScreenState();
@@ -212,14 +215,16 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     ],
                   ),
                 ),
-      bottomNavigationBar: CustomBottomNavBar(
-        currentIndex: 3,
-        onTap: (index) {
-          if (index == 0) Navigator.pushReplacementNamed(context, '/');
-          if (index == 1) Navigator.pushReplacementNamed(context, '/record');
-          if (index == 2) Navigator.pushReplacementNamed(context, '/report');
-        },
-      ),
+      bottomNavigationBar: MainShellScope.of(context) != null
+          ? null
+          : CustomBottomNavBar(
+              currentIndex: 3,
+              onTap: (index) {
+                if (index == 0) Navigator.pushReplacementNamed(context, '/');
+                if (index == 1) Navigator.pushReplacementNamed(context, '/record');
+                if (index == 2) Navigator.pushReplacementNamed(context, '/report');
+              },
+            ),
     );
   }
 
@@ -278,11 +283,15 @@ class _HistoryScreenState extends State<HistoryScreen> {
       onDismissed: (_) => _deleteReport(r),
       child: GestureDetector(
         onTap: () {
-          Navigator.pushNamed(
-            context,
-            '/report',
-            arguments: r.toPredictionResult(),
-          );
+          if (widget.onSelectReport != null) {
+            widget.onSelectReport!(r);
+          } else {
+            Navigator.pushNamed(
+              context,
+              '/report',
+              arguments: r.toPredictionResult(),
+            );
+          }
         },
         child: Container(
           margin: const EdgeInsets.symmetric(vertical: 6),
@@ -481,7 +490,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
             ),
             const SizedBox(height: 28),
             ElevatedButton.icon(
-              onPressed: () => Navigator.pushReplacementNamed(context, '/record'),
+              onPressed: () {
+                final shell = MainShellScope.of(context);
+                if (shell != null) {
+                  shell.switchToTab(1);
+                } else {
+                  Navigator.pushReplacementNamed(context, '/record');
+                }
+              },
               icon: const Icon(Icons.mic_rounded),
               label: const Text('Start Screening'),
               style: ElevatedButton.styleFrom(

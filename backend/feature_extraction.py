@@ -1,30 +1,30 @@
 """
 feature_extraction.py — Audio feature extraction pipeline.
-Mirrors Stage 1 from the architecture document and the training notebook exactly.
+Mirrors Section 3 from exported_models/v2-sih.ipynb exactly.
 """
 
 import warnings
 warnings.filterwarnings("ignore")
 
+from pathlib import Path
 import numpy as np
 import librosa
-from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# Librosa features (MFCCs, F0, ZCR, spectral)
+# Configuration (mirrors v2-sih.ipynb)
 # ---------------------------------------------------------------------------
 
-N_MFCC = 13
 SAMPLE_RATE = 16_000
+N_MFCC = 13
 
 
-def extract_librosa_features(y: np.ndarray, sr: int) -> dict:
+def extract_librosa_features(y: np.ndarray, sr: int = SAMPLE_RATE) -> dict:
     """MFCCs, F0, ZCR, spectral features — classical acoustic features."""
     mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=N_MFCC)
     mfcc_mean = mfcc.mean(axis=1)
     mfcc_std = mfcc.std(axis=1)
 
-    f0 = librosa.yin(y, fmin=50, fmax=500, sr=sr, hop_length=512)
+    f0 = librosa.yin(y, fmin=50, fmax=500, sr=sr)
     f0 = f0[~np.isnan(f0)]
     f0_mean = float(np.mean(f0)) if len(f0) else 0.0
     f0_std = float(np.std(f0)) if len(f0) else 0.0
@@ -33,14 +33,17 @@ def extract_librosa_features(y: np.ndarray, sr: int) -> dict:
     spec_centroid = float(librosa.feature.spectral_centroid(y=y, sr=sr).mean())
     spec_rolloff = float(librosa.feature.spectral_rolloff(y=y, sr=sr).mean())
 
-    feats: dict = {}
+    feats = {}
     for i, v in enumerate(mfcc_mean):
         feats[f"mfcc_mean_{i}"] = float(v)
     for i, v in enumerate(mfcc_std):
         feats[f"mfcc_std_{i}"] = float(v)
     feats.update({
-        "f0_mean": f0_mean, "f0_std": f0_std,
-        "zcr": zcr, "spec_centroid": spec_centroid, "spec_rolloff": spec_rolloff,
+        "f0_mean": f0_mean,
+        "f0_std": f0_std,
+        "zcr": zcr,
+        "spec_centroid": spec_centroid,
+        "spec_rolloff": spec_rolloff,
     })
     return feats
 
@@ -72,14 +75,17 @@ def extract_praat_features(wav_path: str) -> dict:
         harmonicity = call(snd, "To Harmonicity (cc)", 0.01, 75, 0.1, 1.0)
         hnr = call(harmonicity, "Get mean", 0, 0)
 
+        def _val(x):
+            return 0.0 if (x is None or np.isnan(x)) else float(x)
+
         return {
-            "jitter_local": float(jitter_local) if jitter_local is not None else 0.0,
-            "jitter_rap":   float(jitter_rap)   if jitter_rap is not None else 0.0,
-            "jitter_ppq5":  float(jitter_ppq5)  if jitter_ppq5 is not None else 0.0,
-            "shimmer_local": float(shimmer_local) if shimmer_local is not None else 0.0,
-            "shimmer_apq3":  float(shimmer_apq3)  if shimmer_apq3 is not None else 0.0,
-            "shimmer_apq5":  float(shimmer_apq5)  if shimmer_apq5 is not None else 0.0,
-            "hnr": float(hnr) if hnr is not None else 0.0,
+            "jitter_local": _val(jitter_local),
+            "jitter_rap":   _val(jitter_rap),
+            "jitter_ppq5":  _val(jitter_ppq5),
+            "shimmer_local": _val(shimmer_local),
+            "shimmer_apq3":  _val(shimmer_apq3),
+            "shimmer_apq5":  _val(shimmer_apq5),
+            "hnr":           _val(hnr),
         }
     except Exception:
         # Return zeros if parselmouth is not installed or fails on this file
@@ -91,45 +97,35 @@ def extract_praat_features(wav_path: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Combined extraction (Stage 1 — optimized for edge and cloud throughput)
+# Combined extraction (mirrors v2-sih.ipynb extract_all_features exactly)
 # ---------------------------------------------------------------------------
 
 def extract_all_features(
     wav_path: str,
     y: np.ndarray = None,
     sr: int = SAMPLE_RATE,
-    include_praat: bool = False,
 ) -> dict:
     """
-    Full Stage-1 pipeline:
-      1. Load + resample to 16 kHz mono (or reuse pre-loaded array)
-      2. Trim silence (VAD via librosa.effects.trim)
-      3. Extract librosa features (MFCCs, F0, ZCR, spectral)
-      4. Extract Praat features (jitter, shimmer, HNR) if requested
-    Returns a flat dict of all raw features.
+    Exact feature extraction pipeline matching v2-sih.ipynb:
+      1. y, sr = librosa.load(wav_path, sr=16000, mono=True)
+      2. y, _ = librosa.effects.trim(y, top_db=25)
+      3. feats = extract_librosa_features(y, sr)
+      4. feats.update(extract_praat_features(wav_path))
     """
-    import soundfile as sf
     if y is None:
-        try:
-            y, sr = sf.read(wav_path, dtype='float32')
-        except Exception:
-            y, sr = librosa.load(wav_path, sr=SAMPLE_RATE, mono=True)
+        y, sr = librosa.load(wav_path, sr=SAMPLE_RATE, mono=True)
+    elif sr != SAMPLE_RATE:
+        y = librosa.resample(y, orig_sr=sr, target_sr=SAMPLE_RATE)
+        sr = SAMPLE_RATE
+
     if y.ndim > 1:
         y = np.mean(y, axis=1)
-    y_trimmed, _ = librosa.effects.trim(y, top_db=20)
-    if len(y_trimmed) > 0:
-        y_norm = y_trimmed / (np.max(np.abs(y_trimmed)) + 1e-8)
-    else:
-        y_norm = y
 
-    feats = {}
-    feats.update(extract_librosa_features(y_norm, sr))
-    if include_praat:
-        feats.update(extract_praat_features(wav_path))
-    else:
-        feats.update({
-            "jitter_local": 0.0, "jitter_rap": 0.0, "jitter_ppq5": 0.0,
-            "shimmer_local": 0.0, "shimmer_apq3": 0.0, "shimmer_apq5": 0.0,
-            "hnr": 0.0,
-        })
+    # Trim silence with top_db=25 exactly as in v2-sih.ipynb
+    y_trimmed, _ = librosa.effects.trim(y, top_db=25)
+    if len(y_trimmed) == 0:
+        y_trimmed = y
+
+    feats = extract_librosa_features(y_trimmed, sr)
+    feats.update(extract_praat_features(wav_path))
     return feats

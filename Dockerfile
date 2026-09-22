@@ -13,9 +13,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY backend/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy backend code and model_v2 artifacts
+# Copy backend code and exported_models artifacts
 COPY backend/ ./backend/
-COPY model_v2/ ./model_v2/
+COPY exported_models/ ./exported_models/
 
 WORKDIR /app/backend
 

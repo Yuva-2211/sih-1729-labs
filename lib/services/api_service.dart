@@ -15,25 +15,24 @@ class ApiConfig {
     _resolvedBaseUrl = url.endsWith('/') ? url.substring(0, url.length - 1) : url;
   }
 
-  /// Candidate URLs to probe - Live Render Cloud Backend prioritized
+  /// Candidate URLs to probe for local/network backend
   static List<String> get candidateUrls {
     if (kIsWeb) {
       return const [
-        'https://sih-1729-labs.onrender.com',
         'http://127.0.0.1:8000',
+        'http://localhost:8000',
       ];
     }
     if (Platform.isAndroid) {
       return const [
-        'https://sih-1729-labs.onrender.com',    // Live Render Cloud Backend
-        'http://127.0.0.1:8000',                 // Local via adb reverse (fallback)
-        'http://10.233.9.13:8000',               // Local Wi-Fi network IP (fallback)
-        'http://10.0.2.2:8000',                  // Android Emulator (fallback)
+        'http://10.0.2.2:8000',                  // Android Emulator
+        'http://127.0.0.1:8000',                 // Local via adb reverse
+        'http://10.1.0.244:8000',                // Local Wi-Fi network IP
       ];
     }
     return const [
-      'https://sih-1729-labs.onrender.com',
       'http://127.0.0.1:8000',
+      'http://localhost:8000',
     ];
   }
 
@@ -45,8 +44,8 @@ class ApiConfig {
     return raw.replaceAll(RegExp(r'/+$'), '');
   }
 
-  // Timeout for predict calls — generous to handle Render cold start (~30s) + LLM time
-  static const Duration timeout = Duration(seconds: 120);
+  // Timeout for predict calls
+  static const Duration timeout = Duration(seconds: 30);
 }
 
 // ---------------------------------------------------------------------------
@@ -213,8 +212,8 @@ class NeuralVoiceApi {
       try {
         final clean = host.replaceAll(RegExp(r'/+$'), '');
         final uri = Uri.parse('$clean/api/v1/health');
-        // 15s per host — enough for Render free-tier cold start (~10-30s)
-        final resp = await http.get(uri).timeout(const Duration(seconds: 15));
+        // 3s per host for quick local backend detection
+        final resp = await http.get(uri).timeout(const Duration(seconds: 3));
         if (resp.statusCode == 200) {
           ApiConfig.setBaseUrl(clean);
           debugPrint('[NeuralVoiceApi] Active backend resolved to: $clean');

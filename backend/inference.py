@@ -28,22 +28,22 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 BASE_DIR = Path(__file__).parent
-# Use v2 model artifacts exclusively as serving models (supports Docker / Cloud deployment)
+# Use exported_models (new v2 model artifacts) as serving models
 _env_model_dir = os.environ.get("MODEL_DIR")
 if _env_model_dir and Path(_env_model_dir).exists():
     MODEL_DIR = Path(_env_model_dir)
+elif (BASE_DIR.parent / "exported_models").exists():
+    MODEL_DIR = BASE_DIR.parent / "exported_models"
+elif (BASE_DIR / "exported_models").exists():
+    MODEL_DIR = BASE_DIR / "exported_models"
 elif (BASE_DIR.parent / "model_v2" / "v2-model-training").exists():
     MODEL_DIR = BASE_DIR.parent / "model_v2" / "v2-model-training"
 elif (BASE_DIR / "model_v2" / "v2-model-training").exists():
     MODEL_DIR = BASE_DIR / "model_v2" / "v2-model-training"
-elif (BASE_DIR.parent / "model_v2" / "v2-model training").exists():
-    MODEL_DIR = BASE_DIR.parent / "model_v2" / "v2-model training"
-elif (BASE_DIR / "model_v2" / "v2-model training").exists():
-    MODEL_DIR = BASE_DIR / "model_v2" / "v2-model training"
 elif (BASE_DIR / "model").exists():
     MODEL_DIR = BASE_DIR / "model"
 else:
-    MODEL_DIR = BASE_DIR.parent / "model_v2" / "v2-model-training"
+    MODEL_DIR = BASE_DIR.parent / "exported_models"
 
 if not MODEL_DIR.exists():
     raise FileNotFoundError(f"V2 Serving model directory not found at: {MODEL_DIR}")
@@ -64,6 +64,14 @@ _scaler = None
 _selected_features: Optional[list] = None
 
 
+def _torch_load_weights(path):
+    """Safely load PyTorch model weights handling weights_only security flags across versions."""
+    try:
+        return torch.load(path, map_location="cpu", weights_only=True)
+    except Exception:
+        return torch.load(path, map_location="cpu", weights_only=False)
+
+
 def _load_models():
     """Load all model variants and preprocessing artifacts once."""
     global _classical_fp32, _classical_int8, _hybrid_fp32, _hybrid_int8
@@ -80,11 +88,16 @@ def _load_models():
     logger.info("Selected features: %s", _selected_features)
 
     # --- Classical FP32 ---
-    _classical_fp32 = ClassicalModel(n_features=N_FEATURES)
-    _classical_fp32.load_state_dict(
-        torch.load(MODEL_DIR / "classical_fp32.pt", map_location="cpu", weights_only=True)
-    )
-    _classical_fp32.eval()
+    try:
+        _classical_fp32 = ClassicalModel(n_features=N_FEATURES)
+        _classical_fp32.load_state_dict(
+            _torch_load_weights(MODEL_DIR / "classical_fp32.pt")
+        )
+        _classical_fp32.eval()
+        logger.info("Classical FP32 model loaded successfully.")
+    except Exception as exc:
+        logger.error("Could not load classical FP32 model: %s", exc)
+        _classical_fp32 = None
 
     # --- Classical INT8 (quantized) ---
     try:
@@ -103,7 +116,7 @@ def _load_models():
             _classical_int8, {torch.nn.Linear}, dtype=torch.qint8
         )
         _classical_int8.load_state_dict(
-            torch.load(MODEL_DIR / "classical_quantized_int8.pt", map_location="cpu", weights_only=True)
+            _torch_load_weights(MODEL_DIR / "classical_quantized_int8.pt")
         )
         _classical_int8.eval()
         logger.info("Classical INT8 model loaded successfully.")
@@ -116,7 +129,7 @@ def _load_models():
         _hybrid_fp32 = build_hybrid_model()
         if _hybrid_fp32 is not None:
             _hybrid_fp32.load_state_dict(
-                torch.load(MODEL_DIR / "hybrid_quantum_fp32.pt", map_location="cpu", weights_only=True)
+                _torch_load_weights(MODEL_DIR / "hybrid_quantum_fp32.pt")
             )
             _hybrid_fp32.eval()
             logger.info("Hybrid FP32 model loaded successfully.")
@@ -144,7 +157,7 @@ def _load_models():
                 _hybrid_int8, {torch.nn.Linear}, dtype=torch.qint8
             )
             _hybrid_int8.load_state_dict(
-                torch.load(MODEL_DIR / "hybrid_quantum_quantized.pt", map_location="cpu", weights_only=True)
+                _torch_load_weights(MODEL_DIR / "hybrid_quantum_quantized.pt")
             )
             _hybrid_int8.eval()
             logger.info("Hybrid INT8 model loaded successfully.")
@@ -208,72 +221,29 @@ def _downsample(arr: np.ndarray, n: int = 200) -> list:
 
 
 class AudioQualityError(ValueError):
-    """Raised when audio is pure noise, silence, or lacks sustained vocal phonation."""
+    """Raised when audio is pure noise, silence, or lacks audio data."""
     pass
 
 
 def validate_audio_quality(y: np.ndarray, sr: int = 16_000):
     """
-    Validate that input audio contains genuine sustained human phonation.
-    Detects and rejects:
-      1. Silence or near-silent ambient recordings.
-      2. Transient clicks, coughs, or taps under 0.8s active phonation.
-      3. Random broadband/white noise, fan humming, and static.
-      4. High-frequency hiss without glottal pitch.
-      5. Aperiodic non-vocal sounds.
+    Sanity check to ensure the recording contains audio data and isn't pure silence.
+    Allows natural variation in Parkinson's dysphonia and tremor.
     """
-    import librosa
-
-    # 1. Check RMS Energy (silence / near-silence detection)
-    rms = float(np.mean(librosa.feature.rms(y=y)))
-    if rms < 0.005:
+    duration_s = len(y) / sr
+    if duration_s < 0.5:
         raise AudioQualityError(
-            f"Audio is too faint or silent (RMS energy: {rms:.4f} < 0.005). "
+            f"Audio sample too short ({duration_s:.2f}s). "
+            "Please record at least 2-3 seconds of sustained vowel 'aaah'."
+        )
+
+    # Check for near-silence
+    rms = float(np.sqrt(np.mean(y ** 2)))
+    if rms < 0.0005 or np.max(np.abs(y)) < 1e-4:
+        raise AudioQualityError(
+            f"Audio is too faint or silent (RMS: {rms:.5f}). "
             "Please check your microphone and speak clearly."
         )
-
-    # 2. VAD Trim (Voice Activity Detection duration)
-    y_trimmed, _ = librosa.effects.trim(y, top_db=20)
-    trimmed_duration = len(y_trimmed) / sr
-    if trimmed_duration < 0.8:
-        raise AudioQualityError(
-            f"Voice sample too short ({trimmed_duration:.2f}s of vocal sound detected). "
-            "Please sustain the vowel 'aaah' continuously for at least 3-5 seconds."
-        )
-
-    # 3. Spectral Flatness (Random noise / white noise detector)
-    flatness = float(np.mean(librosa.feature.spectral_flatness(y=y_trimmed)))
-    if flatness > 0.18:
-        raise AudioQualityError(
-            f"Random background noise detected (Spectral Flatness: {flatness:.3f} > 0.18). "
-            "No sustained harmonic human voice was found. Please record in a quiet environment."
-        )
-
-    # 4. Zero-Crossing Rate (High-frequency hiss / static)
-    zcr = float(np.mean(librosa.feature.zero_crossing_rate(y_trimmed)))
-    if zcr > 0.32:
-        raise AudioQualityError(
-            f"Excessive static or hissing noise detected (ZCR: {zcr:.3f} > 0.32). "
-            "Please ensure you are speaking directly into the microphone."
-        )
-
-    # 5. Glottal Periodicity (Autocorrelation in human pitch range: 65 Hz to 450 Hz)
-    mid_start = len(y_trimmed) // 4
-    mid_end = min(len(y_trimmed), mid_start + int(0.2 * sr))
-    frame = y_trimmed[mid_start:mid_end]
-    if len(frame) >= 250:
-        corr = np.correlate(frame, frame, mode='full')
-        corr = corr[len(corr)//2:]
-        if corr[0] > 0:
-            norm_corr = corr / corr[0]
-            # Lag range for 65 Hz to 450 Hz at 16 kHz:
-            # 16000 / 450 ~= 35, 16000 / 65 ~= 246
-            pitch_peak = float(np.max(norm_corr[35:min(246, len(norm_corr))]))
-            if pitch_peak < 0.22:
-                raise AudioQualityError(
-                    f"Non-vocal sound detected (Glottal Periodicity: {pitch_peak:.3f} < 0.22). "
-                    "Please produce a clear, sustained vowel sound like 'aaah'."
-                )
 
 
 def predict(
@@ -283,38 +253,28 @@ def predict(
     patient_name: str = "Participant",
 ) -> dict:
     """
-    Full pipeline: audio → features → scaling → model → risk score → LLM recommendation.
-
-    Stages
-    ------
-    1. Audio preprocessing (resample, VAD trim, normalise)
-    2. Feature extraction  (MFCCs, F0, ZCR, spectral, jitter, shimmer, HNR)
-    3. Feature selection   (top-8 loaded from training artifact)
-    4. Quantum encoding    (StandardScaler → AngleEmbedding inside PennyLane)
-    5. Model inference     (classical_fp32 | classical_int8 | hybrid_fp32 | hybrid_int8)
-    6. Post-processing     (sigmoid → risk probability + threshold → risk level)
-    7. LLM recommendation  (Groq Llama 3 — falls back to rule-based if key absent)
+    Full pipeline matching v2-sih.ipynb:
+      audio → features (extract_all_features) → scaling (feature_scaler) → model → risk score → LLM.
     """
     _load_models()
 
     # --- Stage 1+2: Audio preprocessing + Feature extraction ---
     t0 = time.perf_counter()
 
-    # Capture raw waveform BEFORE any processing (fast single read)
+    # Load audio at 16 kHz mono matching v2-sih.ipynb
     try:
+        import librosa as _librosa
+        _y_raw, _sr_raw = _librosa.load(wav_path, sr=16_000, mono=True)
+    except Exception:
         _y_raw, _sr_raw = sf.read(wav_path, dtype='float32')
         if _sr_raw != 16_000:
             import librosa as _librosa
             _y_raw = _librosa.resample(_y_raw, orig_sr=_sr_raw, target_sr=16_000)
             _sr_raw = 16_000
-    except Exception:
-        import librosa as _librosa
-        _y_raw, _sr_raw = _librosa.load(wav_path, sr=16_000, mono=True)
+        if _y_raw.ndim > 1:
+            _y_raw = np.mean(_y_raw, axis=1)
 
-    if _y_raw.ndim > 1:
-        _y_raw = np.mean(_y_raw, axis=1)
-
-    # Validate audio quality to immediately reject random noise or silence
+    # Validate audio quality (silence / empty check)
     validate_audio_quality(_y_raw, _sr_raw)
 
     raw_waveform = _downsample(_y_raw)
@@ -324,14 +284,13 @@ def predict(
     sf.write(_raw_buf, _y_raw, 16_000, format='WAV', subtype='PCM_16')
     raw_audio_b64 = base64.b64encode(_raw_buf.getvalue()).decode('utf-8')
 
+    # Extract all features matching v2-sih.ipynb (librosa + praat, trimmed at top_db=25)
     all_feats = extract_all_features(wav_path, y=_y_raw, sr=_sr_raw)
 
-    # Capture preprocessed waveform (reuse array without reloading from disk)
+    # Preprocessed waveform (trimmed silence at top_db=25 matching v2-sih.ipynb)
     import librosa as _librosa
-    _y_proc, _ = _librosa.effects.trim(_y_raw, top_db=20)
-    if len(_y_proc) > 0:
-        _y_proc = _y_proc / (np.max(np.abs(_y_proc)) + 1e-8)
-    else:
+    _y_proc, _ = _librosa.effects.trim(_y_raw, top_db=25)
+    if len(_y_proc) == 0:
         _y_proc = _y_raw
     preprocessed_waveform = _downsample(_y_proc)
 
@@ -361,6 +320,16 @@ def predict(
     if model is None:
         model = _classical_fp32
         model_variant = "classical_fp32 (fallback)"
+
+    if model is None:
+        for name, candidate in model_map.items():
+            if candidate is not None:
+                model = candidate
+                model_variant = f"{name} (fallback)"
+                break
+
+    if model is None:
+        raise RuntimeError("No model variants could be loaded. Please ensure model weights are present in the model directory.")
 
     model.eval()
     with torch.no_grad():

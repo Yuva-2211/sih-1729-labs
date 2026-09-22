@@ -1,11 +1,8 @@
 import 'package:flutter/material.dart';
 
 import 'theme/app_theme.dart';
-import 'screens/home_screen.dart';
-import 'screens/record_screen.dart';
-import 'screens/report_screen.dart';
+import 'screens/main_shell.dart';
 import 'screens/analysis_pipeline_screen.dart';
-import 'screens/history_screen.dart';
 
 void main() {
   runApp(const NeuroVoiceApp());
@@ -21,12 +18,39 @@ class NeuroVoiceApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       initialRoute: '/',
-      routes: {
-        '/':        (context) => const HomeScreen(),
-        '/record':  (context) => const RecordScreen(),
-        '/pipeline':(context) => const AnalysisPipelineScreen(),
-        '/report':  (context) => const ReportScreen(),
-        '/history': (context) => const HistoryScreen(),
+      onGenerateRoute: (settings) {
+        if (settings.name == '/pipeline') {
+          return MaterialPageRoute(
+            builder: (context) => const AnalysisPipelineScreen(),
+            settings: settings,
+          );
+        }
+        if (settings.name == '/record') {
+          return MaterialPageRoute(
+            builder: (context) => const MainShell(initialTab: 1),
+            settings: settings,
+          );
+        }
+        if (settings.name == '/report') {
+          return MaterialPageRoute(
+            builder: (context) => MainShell(
+              initialTab: 2,
+              initialReport: settings.arguments,
+            ),
+            settings: settings,
+          );
+        }
+        if (settings.name == '/history') {
+          return MaterialPageRoute(
+            builder: (context) => const MainShell(initialTab: 3),
+            settings: settings,
+          );
+        }
+        // Default '/'
+        return MaterialPageRoute(
+          builder: (context) => const MainShell(initialTab: 0),
+          settings: settings,
+        );
       },
     );
   }

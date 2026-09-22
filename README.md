@@ -7,7 +7,6 @@
 [![PennyLane](https://img.shields.io/badge/PennyLane-Quantum_ML-brightgreen)](https://pennylane.ai)
 [![Groq Llama 3](https://img.shields.io/badge/Groq-Llama_3-f55036)](https://groq.com)
 [![Docker](https://img.shields.io/badge/Docker-Containerized-2496ED?logo=docker&logoColor=white)](https://docker.com)
-[![Render](https://img.shields.io/badge/Render-Deployable-46E3B7?logo=render&logoColor=white)](https://render.com)
 [![SQLite](https://img.shields.io/badge/SQLite-Local_Storage-003B57?logo=sqlite&logoColor=white)](https://sqlite.org)
 
 ---
@@ -53,7 +52,7 @@ A fully functional hybrid quantum machine learning software platform capable of 
 | **3** | **Model Optimization & Edge Quantization** | Post-training dynamic 8-bit quantization (INT8) for both classical and hybrid networks, ensuring sub-50ms inference latency. | `backend/inference.py`, PyTorch Quantization | ✅ Completed |
 | **4** | **Classical vs. Hybrid Benchmarking Suite** | Comprehensive comparative evaluation benchmarking Classical FP32/INT8 against Hybrid Quantum FP32/INT8 on MDVR-KCL and UCI datasets. | `backend/benchmark.py`, `DOCUMENTATION.md` | ✅ Completed |
 | **5** | **AI Clinical Explainability & Reporting** | Generative clinical narrative engine via Groq Llama 3, translating numeric acoustic anomalies into actionable medical interpretations. | `backend/llm_recommendation.py` | ✅ Completed |
-| **6** | **Containerized Cloud Inference API** | Scalable FastAPI REST backend with eager model warm-up, CORS handling, audio validation, Swagger docs, and Docker runtime. | `backend/main.py`, `Dockerfile`, `render.yaml` | ✅ Completed |
+| **6** | **Containerized Inference API** | Scalable FastAPI REST backend with eager model warm-up, CORS handling, audio validation, Swagger docs, and Docker runtime. | `backend/main.py`, `Dockerfile` | ✅ Completed |
 | **7** | **Cross-Platform Mobile Screening App** | Production-ready Flutter client featuring live audio capture, dual waveform visualizers (`fl_chart`), audio playback, and PDF-style report view. | `lib/`, Flutter 3.22+ | ✅ Completed |
 | **8** | **Privacy-Preserving On-Device Storage** | Offline-first SQLite database retaining patient screening histories and feature vectors locally without cloud telemetry leaks. | `lib/services/database_service.dart`, `sqflite` | ✅ Completed |
 | **9** | **Geospatial Specialist Referral** | Integrated movement disorder clinic locator via OpenStreetMap Overpass API without requiring proprietary map API keys or geotracking. | `lib/screens/neurologist_finder_screen.dart` | ✅ Completed |
@@ -434,49 +433,36 @@ flutter run
 
 ---
 
-## 10. Deploying Backend to Render (Cloud Hosting)
+## 10. Containerized Backend Deployment (Docker)
 
-The NeuroVoice backend is containerized and ready to deploy to [Render](https://render.com) using Docker. Because audio feature extraction requires system-level shared libraries (`libsndfile1` and `ffmpeg`), **Docker deployment is the recommended method** to guarantee flawless execution in production.
+The NeuroVoice backend is fully containerized using Docker. Because audio feature extraction requires system-level shared libraries (`libsndfile1` and `ffmpeg`), **Docker deployment is the recommended method** to guarantee consistent execution in production environments.
 
-### Method 1: One-Click Blueprint Deployment (Recommended)
-1. Ensure this repository is pushed to your GitHub account: `https://github.com/Yuva-2211/sih-1729-labs.git`.
-2. Navigate to [Render Dashboard](https://dashboard.render.com/) and sign in.
-3. Click **New +** → **Blueprint**.
-4. Connect your GitHub repository `sih-1729-labs`.
-5. Render detects the root [`render.yaml`](render.yaml) file automatically:
-   - **Service Name**: `neurovoice-backend`
-   - **Runtime**: `Docker` (using root `Dockerfile`)
-   - **Health Check Path**: `/api/v1/health`
-   - **Port**: `8000`
-6. (Optional) In the configuration screen, supply your `GROQ_API_KEY` for AI clinical recommendations.
-7. Click **Apply**. Render will automatically build the image and spin up your web service.
+### Building and Running with Docker
 
----
+```bash
+# Build the Docker image
+docker build -t neurovoice-backend .
 
-### Method 2: Manual Web Service Setup via Dashboard
-1. Go to [Render Dashboard](https://dashboard.render.com/) and click **New +** → **Web Service**.
-2. Choose **Build and deploy from a Git repository** and connect `sih-1729-labs`.
-3. Fill out the service settings:
-   - **Name**: `neurovoice-backend`
-   - **Region**: Select your preferred region (e.g., *Oregon (US West)* or *Singapore*)
-   - **Branch**: `main`
-   - **Language / Runtime**: **Docker**
-   - **Dockerfile Path**: `./Dockerfile`
-   - **Docker Context**: `.`
-   - **Instance Type**: **Free**
-4. Under **Advanced** → **Environment Variables**:
-   - `PORT`: `8000`
-   - `GROQ_API_KEY`: *(Optional: Your Groq API key `gsk_...` for LLM clinical summaries)*
-5. Under **Health Check Path**, enter: `/api/v1/health`.
-6. Click **Create Web Service**.
+# Run the container (mapping port 8000)
+docker run -d -p 8000:8000 -e GROQ_API_KEY="your_groq_api_key" --name neurovoice neurovoice-backend
+```
 
-Once deployed, your live endpoints will be:
-- **Service Base URL**: `https://<your-service-name>.onrender.com`
-- **Interactive Swagger Docs**: `https://<your-service-name>.onrender.com/docs`
-- **Health Probe**: `https://<your-service-name>.onrender.com/api/v1/health`
+Once running, the service endpoints are:
+- **Service Base URL**: `http://localhost:8000`
+- **Interactive Swagger Docs**: `http://localhost:8000/docs`
+- **Health Probe**: `http://localhost:8000/api/v1/health`
 
-> [!NOTE]
-> Free-tier instances on Render enter sleep mode after 15 minutes of inactivity. When a new screening request arrives, the first cold start may take 40–50 seconds while the container initializes and pre-warms the quantum/classical weights.
+### Local Execution (Python Virtual Environment)
+
+```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+
+# Start FastAPI server with live reloading
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
 
 ---
 

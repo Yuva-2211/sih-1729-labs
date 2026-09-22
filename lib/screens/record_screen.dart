@@ -10,8 +10,12 @@ import '../services/api_service.dart';
 import '../widgets/v2_model_selector.dart';
 
 class RecordScreen extends StatefulWidget {
-  const RecordScreen({super.key});
+  final void Function(dynamic result)? onScreeningDone;
 
+  const RecordScreen({
+    super.key,
+    this.onScreeningDone,
+  });
 
   @override
   State<RecordScreen> createState() => _RecordScreenState();
@@ -43,16 +47,20 @@ class _RecordScreenState extends State<RecordScreen>
   // ---- Minimum recording time (seconds) -----------------------------------
   static const int _minSeconds = 5;
 
+  // ---- Model Variant Selection -------------------------------------------
+  String _selectedModelVariant = NeuralVoiceApi.activeModelVariant;
+  final bool _useLlm = true;
+
   @override
   void initState() {
     super.initState();
-    waveformHeights = List.generate(10, (_) => 4.0);
+    waveformHeights = List.generate(12, (_) => 4.0);
 
     _pulseController = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 1),
+      duration: const Duration(milliseconds: 900),
     );
-    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.05).animate(
+    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.08).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
 
@@ -60,7 +68,6 @@ class _RecordScreenState extends State<RecordScreen>
   }
 
   Future<void> _initRecorder() async {
-    // Request microphone permission
     final status = await Permission.microphone.request();
     if (status != PermissionStatus.granted) {
       if (mounted) {
@@ -116,9 +123,9 @@ class _RecordScreenState extends State<RecordScreen>
       setState(() => seconds++);
     });
 
-    _waveformTimer = Timer.periodic(const Duration(milliseconds: 100), (t) {
+    _waveformTimer = Timer.periodic(const Duration(milliseconds: 80), (t) {
       setState(() {
-        waveformHeights = List.generate(10, (_) => 4.0 + random.nextDouble() * 24.0);
+        waveformHeights = List.generate(12, (_) => 4.0 + random.nextDouble() * 30.0);
       });
     });
   }
@@ -133,7 +140,7 @@ class _RecordScreenState extends State<RecordScreen>
     setState(() {
       isRecording = false;
       isComplete = true;
-      waveformHeights = List.generate(10, (_) => 4.0);
+      waveformHeights = List.generate(12, (_) => 4.0);
     });
 
     if (seconds < _minSeconds) {
@@ -144,7 +151,7 @@ class _RecordScreenState extends State<RecordScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Recording too short. Please record at least $_minSeconds seconds.'),
+            content: Text('Recording must be at least $_minSeconds seconds long for acoustic tremor evaluation.'),
             backgroundColor: AppColors.error,
           ),
         );
@@ -166,14 +173,10 @@ class _RecordScreenState extends State<RecordScreen>
     }
   }
 
-  // ---- Model Variant Selection (Serving v2 Models) -----------------------
-  // Fix #10: read from NeuralVoiceApi.activeModelVariant (single source of truth)
-  String _selectedModelVariant = NeuralVoiceApi.activeModelVariant;
-  final bool _useLlm = true;
-
   void _proceed() {
     if (_recordedFilePath == null || !isComplete) return;
     final patientName = _nameController.text.trim().isEmpty ? 'Participant' : _nameController.text.trim();
+    
     Navigator.pushNamed(
       context,
       '/pipeline',
@@ -197,241 +200,299 @@ class _RecordScreenState extends State<RecordScreen>
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final canPop = Navigator.canPop(context);
 
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
         backgroundColor: AppColors.surface,
         elevation: 0,
-        centerTitle: true,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.onSurfaceVariant),
-          onPressed: () => Navigator.pop(context),
-        ),
+        centerTitle: false,
+        leading: canPop
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back, color: AppColors.onSurface),
+                onPressed: () => Navigator.pop(context),
+              )
+            : null,
         title: Text(
-          'NeuroVoice',
-          style: theme.textTheme.headlineMedium?.copyWith(
+          'Voice Recording',
+          style: theme.textTheme.titleLarge?.copyWith(
             fontWeight: FontWeight.bold,
             color: AppColors.onSurface,
           ),
         ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.primaryContainer.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.primaryContainer.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.mic, size: 14, color: AppColors.primaryContainer),
+                    const SizedBox(width: 4),
+                    Text(
+                      _recorderReady ? '16 kHz PCM' : 'Init...',
+                      style: const TextStyle(
+                        color: AppColors.primaryContainer,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1.0),
           child: Container(
-            color: AppColors.outlineVariant.withValues(alpha: 0.5),
+            color: AppColors.outlineVariant.withValues(alpha: 0.4),
             height: 1.0,
           ),
         ),
       ),
-      body: Center(
+      body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          physics: const BouncingScrollPhysics(),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                'STEP 1 OF 3',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: AppColors.onSurfaceVariant,
-                  letterSpacing: 1.5,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Speak the sustained vowel /aaah/ for 5–10 seconds.',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: AppColors.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: 24),
-
+              // ── 1. Clean Participant Name Field ────────────────────────
               Container(
-                width: double.infinity,
-                constraints: const BoxConstraints(maxWidth: 450),
-                padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
-                  color: AppColors.surfaceContainerLowest,
+                  color: AppColors.surface,
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                      color: AppColors.outlineVariant.withValues(alpha: 0.5)),
+                  border: Border.all(color: AppColors.outlineVariant.withValues(alpha: 0.4)),
                 ),
-                child: Column(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: TextField(
+                  controller: _nameController,
+                  enabled: !isRecording,
+                  decoration: const InputDecoration(
+                    icon: Icon(Icons.person_outline_rounded, color: AppColors.onSurfaceVariant, size: 20),
+                    hintText: 'Participant Name (Optional)',
+                    hintStyle: TextStyle(fontSize: 13.5, color: AppColors.onSurfaceVariant),
+                    border: InputBorder.none,
+                  ),
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // ── 2. Instructions ────────────────────────────────────────
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: AppColors.primaryContainer.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppColors.primaryContainer.withValues(alpha: 0.15)),
+                ),
+                child: Row(
                   children: [
-                    // Participant Name Input
-                    TextField(
-                      controller: _nameController,
-                      enabled: !isRecording,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.onSurface,
-                      ),
-                      decoration: InputDecoration(
-                        labelText: 'Participant / Patient Name',
-                        hintText: 'e.g. Alex Kumar or Patient #01',
-                        labelStyle: theme.textTheme.bodySmall?.copyWith(
-                          color: AppColors.onSurfaceVariant,
-                        ),
-                        prefixIcon: const Icon(
-                          Icons.person_outline_rounded,
-                          size: 20,
-                          color: AppColors.primaryContainer,
-                        ),
-                        isDense: true,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: const BorderSide(color: AppColors.outlineVariant),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: BorderSide(color: AppColors.outlineVariant.withValues(alpha: 0.7)),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: const BorderSide(color: AppColors.primaryContainer, width: 1.5),
-                        ),
-                        fillColor: AppColors.surface,
-                        filled: true,
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-
-                    // Timer display
-                    Text(
-                      timerText,
-                      style: theme.textTheme.displayLarge?.copyWith(
-                        color: isRecording
-                            ? AppColors.error
-                            : AppColors.onSurface,
-                        fontFeatures: [const FontFeature.tabularFigures()],
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-
-                    // Mic button
-                    GestureDetector(
-                      onTap: _toggleRecording,
-                      child: ScaleTransition(
-                        scale: _pulseAnimation,
-                        child: Container(
-                          width: 112,
-                          height: 112,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: isRecording
-                                ? AppColors.primaryContainer
-                                    .withValues(alpha: 0.1)
-                                : AppColors.surfaceContainerLow,
-                            border: Border.all(
-                              color: isRecording
-                                  ? AppColors.primaryContainer
-                                  : AppColors.outlineVariant,
-                              width: isRecording ? 2 : 1,
-                            ),
-                          ),
-                          child: Icon(
-                            isRecording ? Icons.stop_rounded : Icons.mic_rounded,
-                            size: 44,
-                            color: isRecording
-                                ? AppColors.error
-                                : AppColors.onSurfaceVariant,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-
-                    // Waveform
-                    SizedBox(
-                      height: 36,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: List.generate(10, (index) {
-                          return AnimatedContainer(
-                            duration: const Duration(milliseconds: 100),
-                            width: 4,
-                            height: waveformHeights[index],
-                            margin:
-                                const EdgeInsets.symmetric(horizontal: 2),
-                            decoration: BoxDecoration(
-                              color: isRecording
-                                  ? AppColors.primaryContainer
-                                  : AppColors.outlineVariant,
-                              borderRadius: BorderRadius.circular(2),
-                            ),
-                          );
-                        }),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-
-                    // Status text
-                    Text(
-                      isComplete
-                          ? '✓ Recording complete (${seconds}s). Select model and proceed.'
-                          : isRecording
-                              ? 'Recording... say /aaah/ continuously.'
-                              : _recorderReady
-                                  ? 'Tap the mic to start recording.'
-                                  : 'Requesting microphone access...',
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: isComplete
-                            ? AppColors.primary
-                            : AppColors.onSurfaceVariant,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-
-                    // Gemini-Style Serving Model Selector
-                    V2ModelSelectorCard(
-                      selectedModelId: _selectedModelVariant,
-                      enabled: !isRecording,
-                      onSelected: (id) {
-                        setState(() => _selectedModelVariant = id);
-                      },
-                    ),
-                    const SizedBox(height: 24),
-
-                    // Action button
-                    SizedBox(
-                      width: double.infinity,
-                      height: 48,
-                      child: ElevatedButton(
-                        onPressed: isComplete
-                            ? _proceed
-                            : (_recorderReady ? _toggleRecording : null),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: isRecording
-                              ? AppColors.surfaceContainerHighest
-                              : AppColors.primaryContainer,
-                          foregroundColor: isRecording
-                              ? AppColors.error
-                              : AppColors.onPrimary,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          elevation: 0,
-                        ),
-                        child: Text(
-                          isComplete
-                              ? 'Next — Run Inference'
-                              : isRecording
-                                  ? 'Stop recording'
-                                  : 'Start recording',
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color:
-                                isRecording ? AppColors.error : AppColors.onPrimary,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 14,
-                          ),
+                    const Icon(Icons.info_outline_rounded, color: AppColors.primaryContainer, size: 18),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Take a deep breath and hold the vowel sound /aaah/ steadily for 5 to 10 seconds.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: AppColors.onSurface,
+                          fontWeight: FontWeight.w500,
+                          height: 1.35,
                         ),
                       ),
                     ),
                   ],
                 ),
               ),
+              const SizedBox(height: 28),
+
+              // ── 3. Visualizer & Mic Centerpiece ─────────────────────────
+              Center(
+                child: GestureDetector(
+                  onTap: _toggleRecording,
+                  child: AnimatedBuilder(
+                    animation: _pulseAnimation,
+                    builder: (context, child) {
+                      return Transform.scale(
+                        scale: isRecording ? _pulseAnimation.value : 1.0,
+                        child: Container(
+                          width: 170,
+                          height: 170,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: isRecording
+                                ? Colors.red.withValues(alpha: 0.12)
+                                : isComplete
+                                    ? Colors.green.withValues(alpha: 0.12)
+                                    : AppColors.primaryContainer.withValues(alpha: 0.1),
+                            border: Border.all(
+                              color: isRecording
+                                  ? Colors.red
+                                  : isComplete
+                                      ? Colors.green
+                                      : AppColors.primaryContainer,
+                              width: 2.5,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: (isRecording
+                                        ? Colors.red
+                                        : AppColors.primaryContainer)
+                                    .withValues(alpha: isRecording ? 0.25 : 0.12),
+                                blurRadius: 28,
+                                spreadRadius: isRecording ? 6 : 1,
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                isRecording
+                                    ? Icons.stop_rounded
+                                    : isComplete
+                                        ? Icons.check_rounded
+                                        : Icons.mic_rounded,
+                                size: 48,
+                                color: isRecording
+                                    ? Colors.red
+                                    : isComplete
+                                        ? Colors.green
+                                        : AppColors.primaryContainer,
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                timerText,
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: isRecording ? Colors.red : AppColors.onSurface,
+                                  fontFeatures: const [FontFeature.tabularFigures()],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // ── Animated Waveform Bars ──────────────────────────────────
+              SizedBox(
+                height: 36,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: waveformHeights.map((h) {
+                    return AnimatedContainer(
+                      duration: const Duration(milliseconds: 80),
+                      width: 4,
+                      height: isRecording ? h : 4.0,
+                      margin: const EdgeInsets.symmetric(horizontal: 3),
+                      decoration: BoxDecoration(
+                        color: isRecording
+                            ? Colors.redAccent
+                            : isComplete
+                                ? Colors.green
+                                : AppColors.outlineVariant.withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+              const SizedBox(height: 8),
+
+              // Status message
+              Text(
+                isComplete
+                    ? '✓ Recording complete (${seconds}s) · Ready for analysis'
+                    : isRecording
+                        ? 'Recording... hold /aaah/ steadily'
+                        : _recorderReady
+                            ? 'Tap the circle or button below to start'
+                            : 'Preparing audio hardware...',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: isComplete || isRecording ? FontWeight.w600 : FontWeight.normal,
+                  color: isComplete
+                      ? Colors.green.shade700
+                      : isRecording
+                          ? Colors.red.shade700
+                          : AppColors.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 28),
+
+              // ── 4. Model Selector (Retained per user preference) ───────
+              V2ModelSelectorCard(
+                selectedModelId: _selectedModelVariant,
+                enabled: !isRecording,
+                onSelected: (id) {
+                  setState(() {
+                    _selectedModelVariant = id;
+                    NeuralVoiceApi.activeModelVariant = id;
+                    V2ModelRegistry.activeModelId = id;
+                  });
+                },
+              ),
+              const SizedBox(height: 24),
+
+              // ── 5. Main Action Button ───────────────────────────────────
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton.icon(
+                  onPressed: isComplete
+                      ? _proceed
+                      : (_recorderReady ? _toggleRecording : null),
+                  icon: Icon(
+                    isComplete
+                        ? Icons.arrow_forward_rounded
+                        : isRecording
+                            ? Icons.stop_rounded
+                            : Icons.mic_rounded,
+                    size: 20,
+                  ),
+                  label: Text(
+                    isComplete
+                        ? 'Run Clinical Analysis'
+                        : isRecording
+                            ? 'Stop Recording'
+                            : 'Start Recording',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                    ),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: isRecording
+                        ? Colors.red
+                        : isComplete
+                            ? Colors.green.shade700
+                            : AppColors.primaryContainer,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    elevation: 0,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
             ],
           ),
         ),
@@ -439,4 +500,3 @@ class _RecordScreenState extends State<RecordScreen>
     );
   }
 }
-

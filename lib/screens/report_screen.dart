@@ -10,13 +10,24 @@ import 'package:url_launcher/url_launcher.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bottom_nav_bar.dart';
 import '../services/api_service.dart';
+import '../services/database_service.dart';
+import 'main_shell.dart';
 
 // ---------------------------------------------------------------------------
 // ReportScreen — single unified screen for all analysis output
 // ---------------------------------------------------------------------------
 
 class ReportScreen extends StatefulWidget {
-  const ReportScreen({super.key});
+  final dynamic activeResult;
+  final VoidCallback? onRecordAgain;
+  final VoidCallback? onViewHistory;
+
+  const ReportScreen({
+    super.key,
+    this.activeResult,
+    this.onRecordAgain,
+    this.onViewHistory,
+  });
 
   @override
   State<ReportScreen> createState() => _ReportScreenState();
@@ -59,6 +70,35 @@ class _ReportScreenState extends State<ReportScreen>
       duration: const Duration(milliseconds: 1200),
     );
     _initPlayer();
+    _resolveInitialResult();
+  }
+
+  void _resolveInitialResult() {
+    if (widget.activeResult != null) {
+      if (widget.activeResult is PredictionResult) {
+        _result = widget.activeResult as PredictionResult;
+      } else if (widget.activeResult is ReportRecord) {
+        _result = (widget.activeResult as ReportRecord).toPredictionResult();
+      }
+      if (_result != null) {
+        _animController.forward();
+        _writeAudioFiles(_result!);
+      }
+    } else {
+      _loadLatestFromDb();
+    }
+  }
+
+  Future<void> _loadLatestFromDb() async {
+    try {
+      final reports = await DatabaseService().getAllReports();
+      if (mounted && reports.isNotEmpty && _result == null) {
+        setState(() {
+          _result = reports.first.toPredictionResult();
+        });
+        _animController.forward();
+      }
+    } catch (_) {}
   }
 
   Future<void> _initPlayer() async {
@@ -67,19 +107,39 @@ class _ReportScreenState extends State<ReportScreen>
   }
 
   @override
+  void didUpdateWidget(ReportScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.activeResult != null && widget.activeResult != oldWidget.activeResult) {
+      PredictionResult? newRes;
+      if (widget.activeResult is PredictionResult) {
+        newRes = widget.activeResult as PredictionResult;
+      } else if (widget.activeResult is ReportRecord) {
+        newRes = (widget.activeResult as ReportRecord).toPredictionResult();
+      }
+      if (newRes != null) {
+        setState(() => _result = newRes);
+        _animController.forward(from: 0.0);
+        _writeAudioFiles(newRes);
+      }
+    }
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final args = ModalRoute.of(context)?.settings.arguments;
-    if (args is PredictionResult && _result == null) {
-      _result = args;
-      _animController.forward();
-      // Write audio temp files
-      _writeAudioFiles(_result!);
+    if (args != null && _result == null) {
+      if (args is PredictionResult) {
+        _result = args;
+      } else if (args is ReportRecord) {
+        _result = args.toPredictionResult();
+      }
+      if (_result != null) {
+        _animController.forward();
+        _writeAudioFiles(_result!);
+      }
 
-      // Fix #8: No longer auto-opens Maps without user consent.
-      // For HIGH risk, show a non-disruptive SnackBar nudge instead.
-      // The 'Find Nearby Neurologists' button on the report page handles the Maps action.
-      if (_result!.riskLevel == 'high') {
+      if (_result != null && _result!.riskLevel == 'high') {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -248,37 +308,72 @@ class _ReportScreenState extends State<ReportScreen>
         appBar: _buildAppBar(theme, null),
         body: Center(
           child: Padding(
-            padding: const EdgeInsets.all(40.0),
+            padding: const EdgeInsets.all(32.0),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.graphic_eq_rounded,
-                    size: 64, color: AppColors.onSurfaceVariant.withValues(alpha: 0.4)),
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryContainer.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.assignment_outlined,
+                    size: 40,
+                    color: AppColors.primaryContainer,
+                  ),
+                ),
                 const SizedBox(height: 24),
                 Text(
-                  'No Analysis Yet',
-                  style: theme.textTheme.headlineLarge,
+                  'No Screening Selected',
+                  style: theme.textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Record your voice to run an acoustic analysis.\nYour full report will appear here.',
+                  'Perform a voice screening test to evaluate acoustic tremor indicators, or select a record from your history.',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: AppColors.onSurfaceVariant,
-                    height: 1.6,
+                    height: 1.5,
                   ),
                 ),
                 const SizedBox(height: 28),
                 ElevatedButton.icon(
-                  onPressed: () => Navigator.pushNamed(context, '/record'),
+                  onPressed: () {
+                    if (widget.onRecordAgain != null) {
+                      widget.onRecordAgain!();
+                    } else {
+                      MainShell.switchTab(context, 1);
+                    }
+                  },
                   icon: const Icon(Icons.mic_rounded),
-                  label: const Text('Start Recording'),
+                  label: const Text('Start Voice Screening'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primaryContainer,
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+                    padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextButton.icon(
+                  onPressed: () {
+                    if (widget.onViewHistory != null) {
+                      widget.onViewHistory!();
+                    } else {
+                      MainShell.switchTab(context, 3);
+                    }
+                  },
+                  icon: const Icon(Icons.history_rounded, size: 18),
+                  label: const Text('View Saved History'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.primaryContainer,
                   ),
                 ),
               ],
@@ -296,7 +391,8 @@ class _ReportScreenState extends State<ReportScreen>
       backgroundColor: AppColors.background,
       appBar: _buildAppBar(theme, r),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 24, 20, 100),
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 800),
@@ -305,65 +401,72 @@ class _ReportScreenState extends State<ReportScreen>
               children: [
                 // ── 1. Risk Summary ─────────────────────────────────────────
                 _buildRiskSummary(theme, r, riskColor, riskIcon),
-                const SizedBox(height: 20),
+                const SizedBox(height: 18),
 
-                // ── 2. LLM Recommendation ───────────────────────────────────
+                // ── 2. LLM Clinical Recommendation ─────────────────────────
                 _buildLlmCard(theme, r, riskColor),
-                const SizedBox(height: 20),
+                const SizedBox(height: 18),
 
-                // ── 3. Waveforms + Playback ──────────────────────────────────
-                _buildWaveformSection(theme, r),
-                const SizedBox(height: 20),
-
-                // ── 4. Explainability Panel ──────────────────────────────────
-                _buildExplainabilityPanel(theme, r),
-                const SizedBox(height: 20),
-
-                // ── 5. All Feature Values ────────────────────────────────────
-                _buildAllFeaturesGrid(theme, r),
-                const SizedBox(height: 20),
-
-                // ── 6. Clinical Metrics ──────────────────────────────────────
-                _buildMetricsRow(theme, r),
-                const SizedBox(height: 20),
-
-                // ── 7. Doctor Finder (HIGH risk only) ───────────────────────
-                if (r.riskLevel == 'high' && r.probability >= 0.65)
+                // ── 3. Doctor Finder (HIGH risk only) ───────────────────────
+                if (r.riskLevel == 'high' && r.probability >= 0.65) ...[
                   _buildDoctorSection(theme),
+                  const SizedBox(height: 18),
+                ],
 
-                const SizedBox(height: 20),
+                // ── 4. Key Clinical Biomarkers at a Glance ──────────────────
+                _buildKeyBiomarkersSummary(theme, r),
+                const SizedBox(height: 18),
 
-                // ── 8. Actions ───────────────────────────────────────────────
-                Row(children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () =>
-                          Navigator.pushNamedAndRemoveUntil(context, '/record', (_) => false),
-                      icon: const Icon(Icons.mic_rounded, size: 18),
-                      label: const Text('Record Again'),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10)),
+                // ── 5. Progressive Disclosure: Deep Acoustic Biomarkers ────
+                _buildAdvancedBiomarkersAccordion(theme, r),
+                const SizedBox(height: 24),
+
+                // ── 6. Actions ───────────────────────────────────────────────
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          if (widget.onRecordAgain != null) {
+                            widget.onRecordAgain!();
+                          } else {
+                            MainShell.switchTab(context, 1);
+                          }
+                        },
+                        icon: const Icon(Icons.mic_rounded, size: 18),
+                        label: const Text('Record Again'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: () => Navigator.pushNamed(context, '/history'),
-                      icon: const Icon(Icons.history_rounded, size: 18),
-                      label: const Text('View History'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primaryContainer,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10)),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          if (widget.onViewHistory != null) {
+                            widget.onViewHistory!();
+                          } else {
+                            MainShell.switchTab(context, 3);
+                          }
+                        },
+                        icon: const Icon(Icons.history_rounded, size: 18),
+                        label: const Text('View History'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primaryContainer,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                ]),
+                  ],
+                ),
               ],
             ),
           ),
@@ -376,13 +479,21 @@ class _ReportScreenState extends State<ReportScreen>
   // ── AppBar ─────────────────────────────────────────────────────────────────
 
   PreferredSizeWidget _buildAppBar(ThemeData theme, PredictionResult? r) {
+    final canPop = Navigator.canPop(context);
+
     return AppBar(
       backgroundColor: AppColors.surface,
       elevation: 0,
       centerTitle: false,
+      leading: canPop
+          ? IconButton(
+              icon: const Icon(Icons.arrow_back, color: AppColors.onSurface),
+              onPressed: () => Navigator.pop(context),
+            )
+          : null,
       title: Text(
-        'NeuroVoice',
-        style: theme.textTheme.headlineMedium?.copyWith(
+        'Screening Report',
+        style: theme.textTheme.titleLarge?.copyWith(
           fontWeight: FontWeight.bold,
           color: AppColors.onSurface,
         ),
@@ -396,10 +507,11 @@ class _ReportScreenState extends State<ReportScreen>
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: (_riskColors[r.riskLevel] ?? AppColors.primary)
-                      .withValues(alpha: 0.1),
+                      .withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                      color: (_riskColors[r.riskLevel] ?? AppColors.primary)),
+                    color: (_riskColors[r.riskLevel] ?? AppColors.primary),
+                  ),
                 ),
                 child: Text(
                   r.riskLabel.toUpperCase(),
@@ -417,9 +529,176 @@ class _ReportScreenState extends State<ReportScreen>
       ],
       bottom: PreferredSize(
         preferredSize: const Size.fromHeight(1),
-        child: Container(color: AppColors.outlineVariant, height: 1),
+        child: Container(
+          color: AppColors.outlineVariant.withValues(alpha: 0.4),
+          height: 1,
+        ),
       ),
     );
+  }
+
+  // ── Key Biomarkers Summary (Top 3) ─────────────────────────────────────────
+
+  Widget _buildKeyBiomarkersSummary(ThemeData theme, PredictionResult r) {
+    // Find representative features
+    double f0 = 0.0;
+    double jitter = 0.0;
+    double shimmer = 0.0;
+    double hnr = 0.0;
+
+    r.selectedFeatures.forEach((k, v) {
+      final lk = k.toLowerCase();
+      if (lk.contains('fo') || lk.contains('f0')) f0 = v;
+      if (lk.contains('jitter') && !lk.contains('rap') && !lk.contains('ppq')) jitter = v;
+      if (lk.contains('shimmer') && !lk.contains('apq') && !lk.contains('dda')) shimmer = v;
+      if (lk.contains('hnr')) hnr = v;
+    });
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.outlineVariant.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.speed_rounded, size: 18, color: AppColors.primaryContainer),
+              const SizedBox(width: 8),
+              Text(
+                'Key Acoustic Indicators',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _buildBiomarkerItem(
+                  'Pitch (F0)',
+                  f0 > 0 ? '${f0.toStringAsFixed(1)} Hz' : 'N/A',
+                  'Fundamental',
+                  f0 > 80 && f0 < 260 ? Colors.green : Colors.amber.shade800,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _buildBiomarkerItem(
+                  'Jitter',
+                  jitter > 0 ? jitter.toStringAsFixed(4) : 'N/A',
+                  'Pitch Tremor',
+                  jitter < 0.010 ? Colors.green : Colors.red.shade700,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _buildBiomarkerItem(
+                  'HNR',
+                  hnr > 0 ? '${hnr.toStringAsFixed(1)} dB' : 'N/A',
+                  'Harmonics',
+                  hnr > 15 ? Colors.green : Colors.red.shade700,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBiomarkerItem(String label, String value, String subtitle, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.onSurfaceVariant),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: color),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            subtitle,
+            style: const TextStyle(fontSize: 9.5, color: AppColors.onSurfaceVariant),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Progressive Disclosure: Advanced Biomarkers Accordion ──────────────────
+
+  Widget _buildAdvancedBiomarkersAccordion(ThemeData theme, PredictionResult r) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.outlineVariant.withValues(alpha: 0.4)),
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          initiallyExpanded: false,
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          leading: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: AppColors.primaryContainer.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(
+              Icons.biotech_rounded,
+              color: AppColors.primaryContainer,
+              size: 20,
+            ),
+          ),
+          title: Text(
+            'Deep Acoustic Biomarkers & Waveforms',
+            style: theme.textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.bold,
+              color: AppColors.onSurface,
+            ),
+          ),
+          subtitle: Text(
+            'Audio playback, SHAP feature importance, and 26-variable matrix',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: AppColors.onSurfaceVariant,
+              fontSize: 11,
+            ),
+          ),
+          children: [
+            const Divider(height: 16),
+            // Waveforms + Playback
+            _buildWaveformSection(theme, r),
+            const SizedBox(height: 18),
+            // Explainability Panel
+            _buildExplainabilityPanel(theme, r),
+            const SizedBox(height: 18),
+            // Clinical Metrics Row
+            _buildMetricsRow(theme, r),
+            const SizedBox(height: 18),
+            // All Feature Values
+            _buildAllFeaturesGrid(theme, r),
+          ],
+        ),
+      ),
   }
 
   // ── 1. Risk Summary ────────────────────────────────────────────────────────
@@ -1167,7 +1446,8 @@ class _ReportScreenState extends State<ReportScreen>
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
-  Widget _buildNav(BuildContext context, int index) {
+  Widget? _buildNav(BuildContext context, int index) {
+    if (MainShellScope.of(context) != null) return null;
     return CustomBottomNavBar(
       currentIndex: index,
       onTap: (i) {

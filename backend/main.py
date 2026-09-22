@@ -194,6 +194,27 @@ def _save_upload_to_temp(upload: UploadFile) -> str:
 # ---------------------------------------------------------------------------
 
 @app.get(
+    "/",
+    tags=["System"],
+    summary="Root status and API discovery",
+)
+@app.head("/", include_in_schema=False)
+async def root():
+    """Root endpoint providing service status and links to documentation and probes."""
+    return {
+        "service": "NeuroVoice — Parkinson's Disease Screening API",
+        "status": "operational",
+        "version": app.version,
+        "endpoints": {
+            "docs": "/docs",
+            "health": "/api/v1/health",
+            "models": "/api/v1/models",
+            "predict_audio": "/api/v1/predict",
+            "predict_features": "/api/v1/predict/features",
+        },
+    }
+
+@app.get(
     "/api/v1/health",
     response_model=HealthResponse,
     tags=["System"],
